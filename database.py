@@ -35,8 +35,7 @@ async def init_db():
                 price       REAL NOT NULL,
                 currency    TEXT DEFAULT 'RUB',
                 is_active   INTEGER DEFAULT 1,
-                sort_order  INTEGER DEFAULT 0,
-                chat_index  INTEGER DEFAULT 0
+                sort_order  INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -78,16 +77,6 @@ async def init_db():
                 valid_until TEXT,
                 is_active   INTEGER DEFAULT 1,
                 created_at  TEXT DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS payment_methods (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                currency    TEXT NOT NULL,
-                details     TEXT NOT NULL,
-                is_link     INTEGER DEFAULT 0,
-                is_active   INTEGER DEFAULT 1,
-                sort_order  INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS bot_settings (
