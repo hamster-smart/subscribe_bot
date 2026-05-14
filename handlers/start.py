@@ -1,0 +1,79 @@
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import CommandStart
+
+import database as db
+from keyboards.inline import main_menu_kb
+
+router = Router()
+
+
+@router.message(CommandStart())
+async def cmd_start(message: Message):
+    await db.upsert_user(
+        message.from_user.id,
+        message.from_user.username,
+        message.from_user.full_name
+    )
+    welcome = await db.get_setting("welcome_text",
+        "👋 Привет! Выбери тариф и получи доступ к каналу.")
+
+    sub = await db.get_active_subscription(message.from_user.id)
+    if sub:
+        from datetime import datetime
+        exp = datetime.fromisoformat(sub["expires_at"])
+        text = (
+            f"{welcome}\n\n"
+            f"✅ У тебя активна подписка: <b>{sub['tariff_name']}</b>\n"
+            f"📅 Действует до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>"
+        )
+    else:
+        text = welcome
+
+    await message.answer(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "main_menu")
+async def cb_main_menu(call: CallbackQuery):
+    welcome = await db.get_setting("welcome_text",
+        "👋 Выбери тариф и получи доступ к каналу.")
+    sub = await db.get_active_subscription(call.from_user.id)
+    if sub:
+        from datetime import datetime
+        exp = datetime.fromisoformat(sub["expires_at"])
+        text = (
+            f"{welcome}\n\n"
+            f"✅ Активная подписка: <b>{sub['tariff_name']}</b>\n"
+            f"📅 До: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>"
+        )
+    else:
+        text = welcome
+    await call.message.edit_text(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "my_subscription")
+async def cb_my_subscription(call: CallbackQuery):
+    sub = await db.get_active_subscription(call.from_user.id)
+    from keyboards.inline import back_kb
+    if sub:
+        from datetime import datetime
+        exp = datetime.fromisoformat(sub["expires_at"])
+        text = (
+            f"👤 <b>Твоя подписка</b>\n\n"
+            f"📦 Тариф: <b>{sub['tariff_name']}</b>\n"
+            f"📅 Активна до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>\n"
+            f"⏳ Осталось: <b>{(exp - datetime.utcnow()).days} дн.</b>"
+        )
+    else:
+        text = "❌ У тебя нет активной подписки.\nВыбери тариф, чтобы получить доступ!"
+    await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "support")
+async def cb_support(call: CallbackQuery):
+    from keyboards.inline import back_kb
+    await call.message.edit_text(
+        "📞 <b>Поддержка</b>\n\nЕсли возникли вопросы — напишите администратору: @admin_username",
+        reply_markup=back_kb(),
+        parse_mode="HTML"
+    )
