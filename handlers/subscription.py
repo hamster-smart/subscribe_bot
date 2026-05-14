@@ -14,19 +14,6 @@ class PromoState(StatesGroup):
     waiting_for_promo_for_tariff = State()
 
 
-@router.callback_query(F.data == "show_tariffs")
-async def cb_show_tariffs(call: CallbackQuery):
-    tariffs = await db.get_tariffs()
-    if not tariffs:
-        await call.answer("Тарифы временно недоступны", show_alert=True)
-        return
-    await call.message.edit_text(
-        "📋 <b>Доступные тарифы</b>\n\nВыбери подходящий план:",
-        reply_markup=tariffs_kb(tariffs),
-        parse_mode="HTML"
-    )
-
-
 @router.callback_query(F.data.startswith("select_tariff:"))
 async def cb_select_tariff(call: CallbackQuery, state: FSMContext):
     tariff_id = int(call.data.split(":")[1])
