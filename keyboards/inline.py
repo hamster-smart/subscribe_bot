@@ -88,7 +88,7 @@ def settings_kb(current_action: str) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=f"{kick_mark} Кик", callback_data="set_action:kick"),
         InlineKeyboardButton(text=f"{mute_mark} Мьют", callback_data="set_action:mute")
     )
-    builder.row(InlineKeyboardButton(text="✏️ Реквизиты оплаты", callback_data="edit_payment_details"))
+    builder.row(InlineKeyboardButton(text="💳 Методы оплаты", callback_data="admin_payment_methods"))
     builder.row(InlineKeyboardButton(text="✏️ Приветствие", callback_data="edit_welcome"))
     builder.row(InlineKeyboardButton(text="📋 Тарифы", callback_data="admin_tariffs"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))

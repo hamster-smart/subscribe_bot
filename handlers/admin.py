@@ -443,3 +443,154 @@ async def cb_tariff_toggle(call: CallbackQuery):
     await call.message.edit_reply_markup(
         reply_markup=tariff_edit_kb(tariff_id, t2["is_active"])
     )
+
+
+# ─── PAYMENT METHODS MANAGEMENT ────────────────────────────────────────────────
+
+class PaymentMethodState(StatesGroup):
+    name = State()
+    currency = State()
+    details = State()
+    is_link = State()
+
+
+def payment_methods_admin_kb(methods: list) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    for m in methods:
+        status = "🟢" if m["is_active"] else "🔴"
+        link_icon = "🔗" if m["is_link"] else "📝"
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {link_icon} {m['name']} ({m['currency']})",
+            callback_data=f"pm_toggle:{m['id']}"
+        ))
+    builder.row(InlineKeyboardButton(text="➕ Добавить метод", callback_data="pm_add"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_settings"))
+    return builder.as_markup()
+
+
+@router.callback_query(F.data == "admin_payment_methods")
+async def cb_payment_methods(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    methods = await db.get_all_payment_methods()
+    text = (
+        "💳 <b>Методы оплаты</b>\n\n"
+        "🟢/🔴 — вкл/выкл (нажми для переключения)\n"
+        "🔗 — ссылка (кнопка), 📝 — текст (реквизиты)\n\n"
+    )
+    if methods:
+        for m in methods:
+            status = "🟢" if m["is_active"] else "🔴"
+            text += f"{status} <b>{m['name']}</b> ({m['currency']})\n"
+            preview = m["details"][:60] + "..." if len(m["details"]) > 60 else m["details"]
+            text += f"   <code>{preview}</code>\n\n"
+    else:
+        text += "Методов пока нет. Добавь первый!"
+
+    await call.message.edit_text(
+        text,
+        reply_markup=payment_methods_admin_kb(methods),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("pm_toggle:"))
+async def cb_pm_toggle(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    await db.toggle_payment_method(method_id)
+    await cb_payment_methods(call)
+
+
+@router.callback_query(F.data == "pm_add")
+async def cb_pm_add(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    await state.set_state(PaymentMethodState.name)
+    await call.message.edit_text(
+        "➕ <b>Новый метод оплаты</b>\n\nШаг 1/4: Введи название:\n"
+        "<i>Например: 💳 Сбербанк, 💶 IBAN EUR, 💳 Тинькофф</i>",
+        reply_markup=cancel_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(PaymentMethodState.name)
+async def pm_set_name(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.update_data(pm_name=message.text.strip())
+    await state.set_state(PaymentMethodState.currency)
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    for cur in ["RUB", "EUR", "USD"]:
+        builder.row(InlineKeyboardButton(text=cur, callback_data=f"pm_currency:{cur}"))
+    await message.answer(
+        "Шаг 2/4: Выбери валюту:",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("pm_currency:"), PaymentMethodState.currency)
+async def pm_set_currency(call: CallbackQuery, state: FSMContext):
+    currency = call.data.split(":")[1]
+    await state.update_data(pm_currency=currency)
+    await state.set_state(PaymentMethodState.details)
+    await call.message.edit_text(
+        "Шаг 3/4: Отправь <b>ссылку</b> или <b>реквизиты</b>:\n\n"
+        "Ссылка: <code>https://www.tinkoff.ru/rm/ivanov/xxx</code>\n"
+        "Реквизиты: <code>IBAN: DE89 3704...\nBIC: COBADEFF</code>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(PaymentMethodState.details)
+async def pm_set_details(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    details = message.text.strip()
+    is_link = 1 if details.startswith("http") else 0
+    await state.update_data(pm_details=details, pm_is_link=is_link)
+    await state.set_state(PaymentMethodState.is_link)
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔗 Ссылка (кнопка)", callback_data="pm_type:1"),
+        InlineKeyboardButton(text="📝 Текст (реквизиты)", callback_data="pm_type:0")
+    )
+    link_detected = "✅ Определено автоматически как ссылка" if is_link else "✅ Определено как текст"
+    await message.answer(
+        f"Шаг 4/4: Как показывать пользователю?\n{link_detected}\n\nПодтверди или измени:",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("pm_type:"), PaymentMethodState.is_link)
+async def pm_confirm(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    is_link = int(call.data.split(":")[1])
+    data = await state.get_data()
+    await state.set_state(None)
+
+    method_id = await db.add_payment_method(
+        name=data["pm_name"],
+        currency=data["pm_currency"],
+        details=data["pm_details"],
+        is_link=is_link
+    )
+    type_label = "🔗 ссылка-кнопка" if is_link else "📝 текстовые реквизиты"
+    await call.message.edit_text(
+        f"✅ <b>Метод добавлен!</b>\n\n"
+        f"Название: {data['pm_name']}\n"
+        f"Валюта: {data['pm_currency']}\n"
+        f"Тип: {type_label}",
+        reply_markup=back_kb("admin_payment_methods"),
+        parse_mode="HTML"
+    )

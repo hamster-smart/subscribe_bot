@@ -6,15 +6,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-async def grant_access(bot: Bot, user_id: int) -> str:
-    """
-    Выдать доступ пользователю. Сначала пробуем снять мьют (на случай если был мьют),
-    затем создаём одноразовую invite-ссылку.
-    """
+def get_channel_id(chat_index: int) -> int:
+    return config.get_channel_id(chat_index)
+
+
+async def grant_access(bot: Bot, user_id: int, chat_index: int = 0) -> str:
+    channel_id = get_channel_id(chat_index)
     try:
-        # Снять мьют если был
         await bot.restrict_chat_member(
-            chat_id=config.CHANNEL_ID,
+            chat_id=channel_id,
             user_id=user_id,
             permissions=ChatPermissions(
                 can_send_messages=True,
@@ -24,44 +24,35 @@ async def grant_access(bot: Bot, user_id: int) -> str:
             )
         )
     except Exception:
-        pass  # Мог не быть в чате
+        pass
 
     try:
-        # Одноразовая invite-ссылка
         link = await bot.create_chat_invite_link(
-            chat_id=config.CHANNEL_ID,
+            chat_id=channel_id,
             member_limit=1,
             name=f"user_{user_id}"
         )
         return link.invite_link
     except Exception as e:
-        logger.warning(f"Could not create invite link: {e}")
-        # Fallback на статическую ссылку
-        if config.CHANNEL_INVITE_LINK:
-            return config.CHANNEL_INVITE_LINK
+        logger.warning(f"Could not create invite link for channel {chat_index}: {e}")
         return "Обратитесь к администратору для получения ссылки."
 
 
-async def kick_user(bot: Bot, user_id: int):
-    """Удалить пользователя из канала/группы."""
+async def kick_user(bot: Bot, user_id: int, chat_index: int = 0):
+    channel_id = get_channel_id(chat_index)
     try:
-        await bot.ban_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id)
-        # Сразу разбанить, чтобы мог вернуться при продлении
-        await bot.unban_chat_member(
-            chat_id=config.CHANNEL_ID,
-            user_id=user_id,
-            only_if_banned=True
-        )
-        logger.info(f"Kicked user {user_id} from channel")
+        await bot.ban_chat_member(chat_id=channel_id, user_id=user_id)
+        await bot.unban_chat_member(chat_id=channel_id, user_id=user_id, only_if_banned=True)
+        logger.info(f"Kicked user {user_id} from channel {chat_index}")
     except Exception as e:
-        logger.error(f"Failed to kick user {user_id}: {e}")
+        logger.error(f"Failed to kick user {user_id} from channel {chat_index}: {e}")
 
 
-async def mute_user(bot: Bot, user_id: int):
-    """Заглушить пользователя в группе (не может писать, но остаётся)."""
+async def mute_user(bot: Bot, user_id: int, chat_index: int = 0):
+    channel_id = get_channel_id(chat_index)
     try:
         await bot.restrict_chat_member(
-            chat_id=config.CHANNEL_ID,
+            chat_id=channel_id,
             user_id=user_id,
             permissions=ChatPermissions(
                 can_send_messages=False,
@@ -70,15 +61,6 @@ async def mute_user(bot: Bot, user_id: int):
                 can_add_web_page_previews=False,
             )
         )
-        logger.info(f"Muted user {user_id} in channel")
+        logger.info(f"Muted user {user_id} in channel {chat_index}")
     except Exception as e:
-        logger.error(f"Failed to mute user {user_id}: {e}")
-
-
-async def is_member(bot: Bot, user_id: int) -> bool:
-    """Проверить, состоит ли пользователь в чате."""
-    try:
-        member = await bot.get_chat_member(chat_id=config.CHANNEL_ID, user_id=user_id)
-        return member.status not in ("left", "kicked")
-    except Exception:
-        return False
+        logger.error(f"Failed to mute user {user_id} in channel {chat_index}: {e}")

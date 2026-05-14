@@ -5,11 +5,16 @@ from typing import Optional
 class Config(BaseSettings):
     # ─── BOT ───────────────────────────────────────────────
     BOT_TOKEN: str = "YOUR_BOT_TOKEN"
-    ADMIN_IDS: list[int] = [123456789]          # Telegram user IDs of admins
+    ADMIN_IDS: list[int] = [123456789]
 
-    # ─── CHANNEL / GROUP ───────────────────────────────────
-    CHANNEL_ID: int = -1001234567890             # ID закрытого канала/группы
-    CHANNEL_INVITE_LINK: str = ""                # Статическая ссылка (если нужна)
+    # ─── CHANNELS ──────────────────────────────────────────
+    CHANNEL_1_ID: int = -1001234567890
+    CHANNEL_1_NAME: str = "💎 VIP Чат 1"
+    CHANNEL_1_DESCRIPTION: str = "Основной закрытый канал"
+
+    CHANNEL_2_ID: int = -1009876543210
+    CHANNEL_2_NAME: str = "🔥 VIP Чат 2"
+    CHANNEL_2_DESCRIPTION: str = "Второй закрытый канал"
 
     # ─── DATABASE ──────────────────────────────────────────
     DB_PATH: str = "data/vipsub.db"
@@ -26,34 +31,22 @@ class Config(BaseSettings):
 
     # ─── PAYMENT: Ручной перевод ───────────────────────────
     MANUAL_PAYMENT_ENABLED: bool = True
-    MANUAL_PAYMENT_DETAILS: str = (
-        "💳 Сбербанк: 4276 1234 5678 9012\n"
-        "💳 Тинькофф: 4377 7777 8888 9999\n"
-        "👤 Получатель: Иван И.\n"
-        "📌 В комментарии укажите ваш Telegram ID"
-    )
 
     # ─── SUBSCRIPTION BEHAVIOR ─────────────────────────────
-    # Действие при истечении: "kick" | "mute"  (настраивается в /admin settings)
     DEFAULT_EXPIRE_ACTION: str = "kick"
-
-    # За сколько дней слать напоминания
     REMINDER_DAYS: list[int] = [3, 1]
 
     # ─── BOT MESSAGES ──────────────────────────────────────
     WELCOME_TEXT: str = (
-        "👋 Привет! Это бот подписки на закрытый канал.\n\n"
-        "Выбери тариф и получи доступ прямо сейчас!"
+        "👋 Привет! Это бот подписки на закрытые каналы.\n\n"
+        "Выбери чат и тариф — получи доступ прямо сейчас!"
     )
-    PAYMENT_SUCCESS_TEXT: str = (
-        "✅ Оплата подтверждена!\n"
-        "Держи ссылку на канал: {link}\n\n"
-        "Подписка действует до: {expires}"
-    )
-    SUBSCRIPTION_EXPIRED_TEXT: str = (
-        "😔 Твоя подписка закончилась.\n"
-        "Чтобы продолжить — оформи новую: /start"
-    )
+
+    def get_channel_id(self, chat_index: int) -> int:
+        return self.CHANNEL_1_ID if chat_index == 0 else self.CHANNEL_2_ID
+
+    def get_channel_name(self, chat_index: int) -> str:
+        return self.CHANNEL_1_NAME if chat_index == 0 else self.CHANNEL_2_NAME
 
     class Config:
         env_file = ".env"

@@ -398,3 +398,58 @@ async def get_stats() -> dict:
             "today_revenue": today_revenue,
             "pending_count": pending_count,
         }
+
+
+# ─── PAYMENT METHODS ───────────────────────────────────────────────────────────
+
+async def get_payment_methods(currency: str | None = None) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if currency:
+            async with db.execute("""
+                SELECT * FROM payment_methods
+                WHERE is_active = 1 AND currency = ?
+                ORDER BY sort_order
+            """, (currency,)) as cur:
+                return await cur.fetchall()
+        else:
+            async with db.execute("""
+                SELECT * FROM payment_methods
+                WHERE is_active = 1
+                ORDER BY currency, sort_order
+            """) as cur:
+                return await cur.fetchall()
+
+
+async def get_all_payment_methods() -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM payment_methods ORDER BY currency, sort_order"
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def add_payment_method(name: str, currency: str, details: str, is_link: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("""
+            INSERT INTO payment_methods (name, currency, details, is_link)
+            VALUES (?, ?, ?, ?)
+        """, (name, currency.upper(), details, is_link))
+        await db.commit()
+        return cur.lastrowid
+
+
+async def toggle_payment_method(method_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            UPDATE payment_methods SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END
+            WHERE id = ?
+        """, (method_id,))
+        await db.commit()
+
+
+async def delete_payment_method(method_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM payment_methods WHERE id = ?", (method_id,))
+        await db.commit()
