@@ -1,0 +1,30 @@
+services:
+
+  bot:
+    build: .
+    container_name: vipsub_bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data        # база данных живёт на хосте
+    depends_on:
+      - webhook
+    networks:
+      - vipsub
+
+  webhook:
+    build: .
+    container_name: vipsub_webhook
+    restart: unless-stopped
+    env_file: .env
+    command: uvicorn webhook_server:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"             # если nginx нет — открыть напрямую
+    volumes:
+      - ./data:/app/data
+    networks:
+      - vipsub
+
+networks:
+  vipsub:
+    driver: bridge
