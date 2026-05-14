@@ -36,7 +36,8 @@ async def init_db():
                 currency    TEXT DEFAULT 'RUB',
                 is_active   INTEGER DEFAULT 1,
                 sort_order  INTEGER DEFAULT 0,
-                chat_index  INTEGER DEFAULT 0
+                chat_index  INTEGER DEFAULT 0,
+                is_trial    INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS subscriptions (
@@ -96,12 +97,13 @@ async def init_db():
             );
 
             -- Default tariffs
-            INSERT OR IGNORE INTO tariffs (name, description, days, price, sort_order)
+            INSERT OR IGNORE INTO tariffs (id, name, description, days, price, sort_order, is_trial)
             VALUES
-                ('🗓 1 месяц',   '30 дней доступа к каналу', 30,  299, 1),
-                ('📅 3 месяца',  '90 дней — выгода 15%',     90,  749, 2),
-                ('📆 6 месяцев', '180 дней — выгода 25%',   180, 1299, 3),
-                ('🏆 1 год',     '365 дней — выгода 40%',   365, 2149, 4);
+                (1, '🎁 Пробный',    '1 день бесплатно — только 1 раз',  1,    0, 0, 1),
+                (2, '🗓 1 месяц',    '30 дней доступа к каналу',         30,  299, 1, 0),
+                (3, '📅 3 месяца',   '90 дней — выгода 15%',             90,  749, 2, 0),
+                (4, '📆 6 месяцев',  '180 дней — выгода 25%',           180, 1299, 3, 0),
+                (5, '🏆 1 год',      '365 дней — выгода 40%',           365, 2149, 4, 0);
 
             -- Default settings
             INSERT OR IGNORE INTO bot_settings (key, value) VALUES
@@ -383,6 +385,21 @@ async def set_setting(key: str, value: str):
         """, (key, value))
         await db.commit()
 
+
+
+
+async def has_used_trial(user_id: int) -> bool:
+    """Проверить, использовал ли юзер пробный тариф хоть раз."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT COUNT(*) as c
+            FROM subscriptions s
+            JOIN tariffs t ON t.id = s.tariff_id
+            WHERE s.user_id = ? AND t.is_trial = 1
+        """, (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row["c"] > 0
 
 # ─── STATS ─────────────────────────────────────────────────────────────────────
 
