@@ -420,7 +420,10 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         InlineKeyboardButton(text="✅ Продлить +30 дн.", callback_data=f"admin_extend:{user_id}:30"),
         InlineKeyboardButton(text="✅ +365 дн.", callback_data=f"admin_extend:{user_id}:365"),
     )
-    builder.row(InlineKeyboardButton(text="🚫 Кикнуть", callback_data=f"admin_kick_user:{user_id}"))
+    if user and user["is_banned"]:
+        builder.row(InlineKeyboardButton(text="✅ Разбанить в боте", callback_data=f"admin_unban_user:{user_id}"))
+    else:
+        builder.row(InlineKeyboardButton(text="🔴 Забанить в боте", callback_data=f"admin_ban_user:{user_id}"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
 
     if edit:
@@ -464,6 +467,41 @@ async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
         )
         await dbc.commit()
     await call.answer("🚫 Пользователь кикнут", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+
+@router.callback_query(F.data.startswith("admin_ban_user:"))
+async def cb_admin_ban_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
+        )
+        await dbc.commit()
+
+    await call.answer("🔴 Пользователь забанен в боте", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_unban_user:"))
+async def cb_admin_unban_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,)
+        )
+        await dbc.commit()
+
+    await call.answer("✅ Пользователь разбанен", show_alert=False)
     await show_user_info(call.message, user_id, bot, edit=True)
 
 # ─── BROADCAST ─────────────────────────────────────────────────────────────────
