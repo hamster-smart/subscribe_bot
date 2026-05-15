@@ -8,6 +8,7 @@ from config import config
 from database import init_db
 from handlers import start, subscription, payment, admin, settings, chat_select
 from services.scheduler import setup_scheduler
+from middlewares.ban_check import BanCheckMiddleware
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,6 +24,10 @@ async def main():
 
     # Init DB
     await init_db()
+
+    # Middlewares
+    dp.message.middleware(BanCheckMiddleware())
+    dp.callback_query.middleware(BanCheckMiddleware())
 
     # Register routers
     dp.include_router(start.router)
