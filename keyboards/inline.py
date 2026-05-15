@@ -74,6 +74,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"))
     builder.row(InlineKeyboardButton(text="⏳ Ожидают оплаты", callback_data="admin_pending"))
     builder.row(InlineKeyboardButton(text="👥 Подписчики", callback_data="admin_subs"))
+    builder.row(InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="admin_find_user"))
     builder.row(InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast"))
     builder.row(InlineKeyboardButton(text="🎟 Промокоды", callback_data="admin_promos"))
     builder.row(InlineKeyboardButton(text="⚙️ Настройки", callback_data="admin_settings"))
