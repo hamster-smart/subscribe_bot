@@ -731,7 +731,7 @@ async def show_tariff_card(target, tariff_id: int, edit: bool = True):
     if not t:
         return
     status = "🟢 Активен" if t["is_active"] else "🔴 Отключён"
-    trial = " | 🎁 Пробный" if t.get("is_trial") else ""
+    trial = " | 🎁 Пробный" if t["is_trial"] else ""
     text = (
         f"📦 <b>{t['name']}</b>{trial}\n\n"
         f"📝 {t['description'] or '—'}\n"
@@ -761,7 +761,7 @@ async def cb_admin_tariffs(call: CallbackQuery):
     builder = InlineKeyboardBuilder()
     for t in tariffs:
         status = "🟢" if t["is_active"] else "🔴"
-        trial = "🎁" if t.get("is_trial") else ""
+        trial = "🎁" if t["is_trial"] else ""
         builder.row(InlineKeyboardButton(
             text=f"{status}{trial} {t['name']} — {t['price']:.0f}₽",
             callback_data=f"admin_edit_tariff:{t['id']}"
