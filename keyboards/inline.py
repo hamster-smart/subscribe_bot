@@ -16,7 +16,7 @@ def tariffs_kb(tariffs: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for t in tariffs:
         builder.row(InlineKeyboardButton(
-            text=f"{t['name']} — {t['price']:.0f} ₽",
+            text=f"{t['name']} — {t['price']:.0f} {t['currency'] or 'RUB'}",
             callback_data=f"select_tariff:{t['id']}"
         ))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
