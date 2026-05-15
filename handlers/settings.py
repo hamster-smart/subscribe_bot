@@ -24,14 +24,17 @@ async def cb_admin_settings(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
     action = await db.get_setting("expire_action", "kick")
+    support = await db.get_setting("support_enabled", "1")
+    support_status = "✅ включена" if support == "1" else "❌ отключена"
     text = (
         f"⚙️ <b>Настройки бота</b>\n\n"
         f"🔚 Действие при истечении подписки:\n"
         f"  {'✅ Кик (удалить из чата)' if action == 'kick' else '◻️ Кик'}\n"
         f"  {'✅ Мьют (заглушить)' if action == 'mute' else '◻️ Мьют'}\n\n"
+        f"📞 Кнопка поддержки: {support_status}\n\n"
         f"Нажми, чтобы изменить:"
     )
-    await call.message.edit_text(text, reply_markup=settings_kb(action), parse_mode="HTML")
+    await call.message.edit_text(text, reply_markup=settings_kb(action, support), parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("set_action:"))
@@ -97,3 +100,17 @@ async def save_welcome(message: Message, state: FSMContext):
         "✅ Приветствие обновлено!",
         reply_markup=back_kb("admin_settings")
     )
+
+
+@router.callback_query(F.data == "toggle_support")
+async def cb_toggle_support(call: CallbackQuery):
+    if not __import__("config").config.ADMIN_IDS.__contains__(call.from_user.id):
+        return
+    current = await db.get_setting("support_enabled", "1")
+    new_val = "0" if current == "1" else "1"
+    await db.set_setting("support_enabled", new_val)
+    status = "✅ включена" if new_val == "1" else "❌ отключена"
+    await call.answer(f"Поддержка {status}", show_alert=True)
+    # Обновить страницу настроек
+    from handlers.settings import cb_admin_settings
+    await cb_admin_settings(call)
