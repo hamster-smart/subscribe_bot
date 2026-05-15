@@ -266,6 +266,206 @@ async def cb_admin_subs(call: CallbackQuery, bot: Bot):
     )
 
 
+
+
+# ─── USER LOOKUP ───────────────────────────────────────────────────────────────
+
+class UserLookupState(StatesGroup):
+    waiting_query = State()
+
+
+@router.callback_query(F.data == "admin_find_user")
+async def cb_admin_find_user(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    await state.set_state(UserLookupState.waiting_query)
+    await call.message.edit_text(
+        "🔍 <b>Поиск пользователя</b>\n\n"
+        "Введи Telegram ID, @username или часть имени:",
+        reply_markup=cancel_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(UserLookupState.waiting_query)
+async def handle_user_lookup(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(None)
+
+    query = message.text.strip().lstrip("@")
+    import aiosqlite as _aiosqlite
+    from datetime import datetime
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+
+        # Поиск по ID, username или имени
+        if query.isdigit():
+            sql = "SELECT * FROM users WHERE user_id = ?"
+            params = (int(query),)
+        else:
+            sql = "SELECT * FROM users WHERE username LIKE ? OR full_name LIKE ? LIMIT 10"
+            params = (f"%{query}%", f"%{query}%")
+
+        async with dbc.execute(sql, params) as cur:
+            users = await cur.fetchall()
+
+    if not users:
+        await message.answer(
+            "❌ Пользователь не найден.",
+            reply_markup=back_kb("admin_menu")
+        )
+        return
+
+    # Если нашли несколько — показать список для выбора
+    if len(users) > 1:
+        builder = InlineKeyboardBuilder()
+        for u in users:
+            label = f"{u['full_name'] or '—'} (@{u['username'] or '—'}) | id{u['user_id']}"
+            builder.row(InlineKeyboardButton(
+                text=label[:60],
+                callback_data=f"admin_user_info:{u['user_id']}"
+            ))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
+        await message.answer(
+            f"🔍 Найдено {len(users)} пользователей. Выбери:",
+            reply_markup=builder.as_markup()
+        )
+        return
+
+    # Один результат — сразу показать
+    await show_user_info(message, users[0]["user_id"], bot)
+
+
+@router.callback_query(F.data.startswith("admin_user_info:"))
+async def cb_admin_user_info(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
+    import aiosqlite as _aiosqlite
+    from datetime import datetime
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+
+        async with dbc.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cur:
+            user = await cur.fetchone()
+
+        async with dbc.execute("""
+            SELECT s.*, t.name as tariff_name
+            FROM subscriptions s
+            JOIN tariffs t ON t.id = s.tariff_id
+            WHERE s.user_id = ?
+            ORDER BY s.created_at DESC
+            LIMIT 5
+        """, (user_id,)) as cur:
+            subs = await cur.fetchall()
+
+        async with dbc.execute("""
+            SELECT * FROM payments WHERE user_id = ?
+            ORDER BY created_at DESC LIMIT 5
+        """, (user_id,)) as cur:
+            payments = await cur.fetchall()
+
+    if not user:
+        text = "❌ Пользователь не найден."
+    else:
+        now = datetime.utcnow()
+        uname = f"@{user['username']}" if user["username"] else "—"
+        joined = datetime.fromisoformat(user["joined_at"]).strftime("%d.%m.%Y") if user["joined_at"] else "—"
+
+        text = (
+            f"👤 <b>{user['full_name'] or '—'}</b> ({uname})\n"
+            f"🆔 <code>{user_id}</code>\n"
+            f"📅 В боте с: {joined}\n"
+        )
+
+        # Подписки
+        if subs:
+            text += "\n📦 <b>Подписки:</b>\n"
+            for s in subs:
+                exp = datetime.fromisoformat(s["expires_at"])
+                if s["is_active"] and exp > now:
+                    days_left = (exp - now).days
+                    status = f"✅ активна, {days_left} дн."
+                elif s["is_active"]:
+                    status = "⏰ истекает сегодня"
+                else:
+                    status = "❌ истекла"
+                text += f"  • {s['tariff_name']} | {status} | до {exp.strftime('%d.%m.%Y')}\n"
+        else:
+            text += "\n📦 Подписок нет\n"
+
+        # Платежи
+        if payments:
+            text += "\n💳 <b>Последние платежи:</b>\n"
+            for p in payments:
+                status_map = {"confirmed": "✅", "pending": "⏳", "rejected": "❌"}
+                icon = status_map.get(p["status"], "❓")
+                created = datetime.fromisoformat(p["created_at"]).strftime("%d.%m.%Y")
+                text += f"  {icon} {p['amount']:.0f}₽ | {p['method']} | {created}\n"
+
+    # Кнопки действий
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Продлить +30 дн.", callback_data=f"admin_extend:{user_id}:30"),
+        InlineKeyboardButton(text="✅ +365 дн.", callback_data=f"admin_extend:{user_id}:365"),
+    )
+    builder.row(InlineKeyboardButton(text="🚫 Кикнуть", callback_data=f"admin_kick_user:{user_id}"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
+
+    if edit:
+        await message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    else:
+        await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("admin_extend:"))
+async def cb_admin_extend(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    _, user_id, days = call.data.split(":")
+    user_id, days = int(user_id), int(days)
+
+    sub = await db.get_active_subscription(user_id)
+    if sub:
+        await db.extend_subscription(user_id, days)
+    else:
+        # Нет активной — создать новую с дефолтным тарифом
+        tariffs = await db.get_tariffs()
+        tariff_id = tariffs[0]["id"] if tariffs else 1
+        await db.create_subscription(user_id, tariff_id, days)
+
+    await call.answer(f"✅ Продлено на {days} дней", show_alert=False)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_kick_user:"))
+async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+    await kick_user(bot, user_id)
+    # Деактивировать подписку
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        )
+        await dbc.commit()
+    await call.answer("🚫 Пользователь кикнут", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
 # ─── BROADCAST ─────────────────────────────────────────────────────────────────
 
 class BroadcastState(StatesGroup):
