@@ -64,3 +64,23 @@ async def mute_user(bot: Bot, user_id: int, chat_index: int = 0):
         logger.info(f"Muted user {user_id} in channel {chat_index}")
     except Exception as e:
         logger.error(f"Failed to mute user {user_id} in channel {chat_index}: {e}")
+
+
+async def unmute_user(bot: Bot, user_id: int, chat_index: int = 0):
+    """Снять мьют — восстановить полный доступ к чату."""
+    channel_id = get_channel_id(chat_index)
+    try:
+        from aiogram.types import ChatPermissions
+        await bot.restrict_chat_member(
+            chat_id=channel_id,
+            user_id=user_id,
+            permissions=ChatPermissions(
+                can_send_messages=True,
+                can_send_media_messages=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+            )
+        )
+        logger.info(f"Unmuted user {user_id} in channel {chat_index}")
+    except Exception as e:
+        logger.error(f"Failed to unmute user {user_id}: {e}")
