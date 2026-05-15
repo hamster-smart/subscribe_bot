@@ -171,17 +171,24 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
             return
         # Создать бесплатную подписку
         await db.create_subscription(call.from_user.id, tariff_id, tariff["days"])
-        from services.channel import grant_access
+        from services.channel import grant_access, mute_user
         from datetime import datetime, timedelta
         link = await grant_access(call.bot, call.from_user.id, chat_index)
         expires = datetime.utcnow() + timedelta(days=tariff["days"])
         chat_name = config.get_channel_name(chat_index)
+        # Мьютим — пробный только читает
+        # Мьют применяем после небольшой задержки, чтобы пользователь успел вступить
+        import asyncio
+        asyncio.get_event_loop().call_later(
+            30, lambda: asyncio.ensure_future(mute_user(call.bot, call.from_user.id, chat_index))
+        )
         text = (
             f"🎁 <b>Пробный доступ активирован!</b>\n\n"
             f"📺 Канал: {chat_name}\n"
             f"🔗 Ссылка: {link}\n"
             f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-            f"После окончания пробного периода выбери платный тариф: /start"
+            f"⚠️ В пробном режиме доступно только чтение.\n"
+            f"Для участия в обсуждениях оформи платную подписку: /start"
         )
         await call.message.edit_text(text, parse_mode="HTML")
         return
