@@ -738,7 +738,7 @@ async def show_tariff_card(target, tariff_id: int, edit: bool = True):
         f"📦 <b>{t['name']}</b>{trial}\n\n"
         f"📝 {t['description'] or '—'}\n"
         f"⏳ Дней: <b>{t['days']}</b>\n"
-        f"💰 Цена: <b>{t['price']:.0f} ₽</b>\n"
+        f"💰 Цена: <b>{t['price']:.0f} {t['currency'] or 'RUB'}</b>\n"
         f"Статус: {status}"
     )
     kb = tariff_card_kb(tariff_id, t["is_active"])
@@ -962,7 +962,7 @@ async def tariff_add_days(message: Message, state: FSMContext):
         return
     await state.update_data(new_days=days)
     await state.set_state(TariffAddState.price)
-    await message.answer("Шаг 4/4: Цена в рублях (0 — бесплатно):")
+    await message.answer("Шаг 4/4: Цена (0 — бесплатно):")
 
 
 def currency_choice_kb(callback_prefix: str) -> object:
