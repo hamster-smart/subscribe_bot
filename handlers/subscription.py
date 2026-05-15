@@ -42,7 +42,7 @@ async def cb_select_tariff(call: CallbackQuery, state: FSMContext):
         f"📝 {tariff['description']}\n"
         f"⏳ Срок: <b>{tariff['days']} дней</b>\n"
         f"💰 Стоимость: <b>{price:.0f} ₽</b>{promo_text}\n\n"
-        f"Выбери способ оплаты:"
+        f"Выберите способ оплаты:"
     )
     await state.update_data(selected_tariff_id=tariff_id, final_price=price)
     await call.message.edit_text(
@@ -56,7 +56,7 @@ async def cb_select_tariff(call: CallbackQuery, state: FSMContext):
 async def cb_enter_promo(call: CallbackQuery, state: FSMContext):
     await state.set_state(PromoState.waiting_for_promo)
     await call.message.edit_text(
-        "🎟 Введи промокод:",
+        "🎟 Введите промокод:",
         reply_markup=back_kb()
     )
 
@@ -67,7 +67,7 @@ async def cb_promo_for_tariff(call: CallbackQuery, state: FSMContext):
     await state.update_data(promo_tariff_id=tariff_id)
     await state.set_state(PromoState.waiting_for_promo_for_tariff)
     await call.message.edit_text(
-        "🎟 Введи промокод для этого тарифа:",
+        "🎟 Введите промокод для этого тарифа:",
         reply_markup=back_kb(f"select_tariff:{tariff_id}")
     )
 
@@ -87,7 +87,7 @@ async def handle_promo_input(message: Message, state: FSMContext):
         )
         await message.answer(
             f"✅ Промокод <b>{code}</b> принят! Скидка: <b>{discount_str}</b>\n\n"
-            f"Теперь выбери тариф:",
+            f"Теперь выберите тариф:",
             reply_markup=tariffs_kb(await db.get_tariffs()),
             parse_mode="HTML"
         )
@@ -124,7 +124,7 @@ async def handle_promo_for_tariff(message: Message, state: FSMContext):
             f"📝 {tariff['description']}\n"
             f"⏳ Срок: <b>{tariff['days']} дней</b>\n"
             f"💰 Стоимость: <b>{price:.0f} ₽</b>{promo_text}\n\n"
-            f"Выбери способ оплаты:"
+            f"Выберите способ оплаты:"
         )
         await message.answer(text, reply_markup=tariff_detail_kb(tariff_id, has_promo=True), parse_mode="HTML")
     else:
