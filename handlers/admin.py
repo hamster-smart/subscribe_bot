@@ -179,19 +179,25 @@ async def cb_admin_reject(call: CallbackQuery, bot: Bot):
 # ─── SUBSCRIBERS LIST ──────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_subs")
-async def cb_admin_subs(call: CallbackQuery):
+async def cb_admin_subs(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id):
         return
-    async with __import__("aiosqlite").connect(config.DB_PATH) as dbc:
-        dbc.row_factory = __import__("aiosqlite").Row
+    import aiosqlite as _aiosqlite
+    import io
+    from datetime import datetime
+    from openpyxl import Workbook
+    from aiogram.types import BufferedInputFile
+
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
         async with dbc.execute("""
-            SELECT u.user_id, u.username, u.full_name, s.expires_at, t.name as tariff_name
+            SELECT u.user_id, u.username, u.full_name, s.starts_at, s.expires_at,
+                   t.name as tariff_name, s.is_active
             FROM subscriptions s
             JOIN users u ON u.user_id = s.user_id
             JOIN tariffs t ON t.id = s.tariff_id
             WHERE s.is_active = 1 AND datetime(s.expires_at) > datetime('now')
             ORDER BY s.expires_at ASC
-            LIMIT 30
         """) as cur:
             subs = await cur.fetchall()
 
@@ -199,18 +205,65 @@ async def cb_admin_subs(call: CallbackQuery):
         await call.message.edit_text("Нет активных подписчиков.", reply_markup=back_kb("admin_menu"))
         return
 
-    from datetime import datetime
-    lines = []
+    # Создать xlsx в памяти
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Подписчики"
+
+    # Заголовки
+    headers = ["User ID", "Username", "Полное имя", "Тариф", "Начало", "Истекает", "Дней осталось"]
+    ws.append(headers)
+
+    # Стиль заголовков
+    from openpyxl.styles import Font, PatternFill, Alignment
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="2E86AB")
+        cell.alignment = Alignment(horizontal="center")
+
+    now = datetime.utcnow()
     for s in subs:
         exp = datetime.fromisoformat(s["expires_at"])
-        name = s["full_name"] or "—"
-        uname = f"@{s['username']}" if s["username"] else f"id{s['user_id']}"
-        lines.append(f"• {name} ({uname}) | {s['tariff_name']} | до {exp.strftime('%d.%m.%y')}")
+        start = datetime.fromisoformat(s["starts_at"])
+        days_left = (exp - now).days
+        ws.append([
+            s["user_id"],
+            f"@{s['username']}" if s["username"] else "—",
+            s["full_name"] or "—",
+            s["tariff_name"],
+            start.strftime("%d.%m.%Y"),
+            exp.strftime("%d.%m.%Y"),
+            days_left,
+        ])
 
-    text = f"👥 <b>Активные подписчики ({len(subs)}):</b>\n\n" + "\n".join(lines)
-    if len(text) > 4000:
-        text = text[:3990] + "\n..."
-    await call.message.edit_text(text, reply_markup=back_kb("admin_menu"), parse_mode="HTML")
+    # Авто-ширина колонок
+    for col in ws.columns:
+        max_len = max((len(str(cell.value or "")) for cell in col), default=10)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 40)
+
+    # Сохранить в буфер
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from datetime import datetime as dt
+    filename = f"subscribers_{dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+    await call.message.edit_text(
+        f"👥 <b>Активных подписчиков: {len(subs)}</b>\n\nФормирую файл...",
+        parse_mode="HTML"
+    )
+    await bot.send_document(
+        call.from_user.id,
+        document=BufferedInputFile(buf.read(), filename=filename),
+        caption=f"📊 Подписчики на {dt.now().strftime('%d.%m.%Y %H:%M')} — {len(subs)} чел."
+    )
+    await call.message.edit_text(
+        f"👥 Файл отправлен — {len(subs)} активных подписчиков.",
+        reply_markup=back_kb("admin_menu"),
+        parse_mode="HTML"
+    )
 
 
 # ─── BROADCAST ─────────────────────────────────────────────────────────────────
