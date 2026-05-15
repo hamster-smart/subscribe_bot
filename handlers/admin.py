@@ -696,6 +696,7 @@ class TariffAddState(StatesGroup):
     description = State()
     days = State()
     price = State()
+    currency = State()
 
 
 def tariff_card_kb(tariff_id: int, is_active: int) -> object:
@@ -718,6 +719,7 @@ def tariff_edit_fields_kb(tariff_id: int) -> object:
     builder.row(InlineKeyboardButton(text="📄 Описание", callback_data=f"tariff_edit_field:{tariff_id}:description"))
     builder.row(InlineKeyboardButton(text="⏳ Дней", callback_data=f"tariff_edit_field:{tariff_id}:days"))
     builder.row(InlineKeyboardButton(text="💰 Цена", callback_data=f"tariff_edit_field:{tariff_id}:price"))
+    builder.row(InlineKeyboardButton(text="💱 Валюта", callback_data=f"tariff_edit_currency:{tariff_id}"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_edit_tariff:{tariff_id}"))
     return builder.as_markup()
 
@@ -860,6 +862,29 @@ async def handle_tariff_field_value(message: Message, state: FSMContext):
     await show_tariff_card(message, tariff_id, edit=False)
 
 
+
+
+@router.callback_query(F.data.startswith("tariff_edit_currency:"))
+async def cb_tariff_edit_currency(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    tariff_id = int(call.data.split(":")[1])
+    await call.message.edit_text(
+        "💱 Выбери новую валюту:",
+        reply_markup=currency_choice_kb(f"tariff_set_currency:{tariff_id}")
+    )
+
+
+@router.callback_query(F.data.startswith("tariff_set_currency:"))
+async def cb_tariff_set_currency(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    parts = call.data.split(":")
+    tariff_id, currency = int(parts[1]), parts[2]
+    await db.update_tariff(tariff_id, currency=currency)
+    await call.answer(f"✅ Валюта: {currency}")
+    await show_tariff_card(call.message, tariff_id, edit=True)
+
 # ── Удаление ────────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("tariff_delete_confirm:"))
@@ -940,6 +965,18 @@ async def tariff_add_days(message: Message, state: FSMContext):
     await message.answer("Шаг 4/4: Цена в рублях (0 — бесплатно):")
 
 
+def currency_choice_kb(callback_prefix: str) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🇷🇺 RUB", callback_data=f"{callback_prefix}:RUB"),
+        InlineKeyboardButton(text="🇪🇺 EUR", callback_data=f"{callback_prefix}:EUR"),
+        InlineKeyboardButton(text="🇺🇸 USD", callback_data=f"{callback_prefix}:USD"),
+    )
+    return builder.as_markup()
+
+
 @router.message(TariffAddState.price)
 async def tariff_add_price(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
@@ -949,6 +986,19 @@ async def tariff_add_price(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Введи число:")
         return
+    await state.update_data(new_price=price)
+    await state.set_state(TariffAddState.currency)
+    await message.answer(
+        "Шаг 5/5: Выбери валюту:",
+        reply_markup=currency_choice_kb("tariff_add_currency")
+    )
+
+
+@router.callback_query(F.data.startswith("tariff_add_currency:"), TariffAddState.currency)
+async def tariff_add_currency(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    currency = call.data.split(":")[1]
     data = await state.get_data()
     await state.set_state(None)
 
@@ -956,10 +1006,12 @@ async def tariff_add_price(message: Message, state: FSMContext):
         name=data["new_name"],
         description=data["new_description"],
         days=data["new_days"],
-        price=price
+        price=data["new_price"]
     )
-    await message.answer(f"✅ Тариф создан!")
-    await show_tariff_card(message, tariff_id, edit=False)
+    # Сохранить валюту
+    await db.update_tariff(tariff_id, currency=currency)
+    await call.message.edit_text(f"✅ Тариф создан!")
+    await show_tariff_card(call.message, tariff_id, edit=False)
 
 
 # ─── PAYMENT METHODS MANAGEMENT ────────────────────────────────────────────────
