@@ -16,7 +16,7 @@ async def cmd_start(message: Message):
         message.from_user.full_name
     )
     welcome = await db.get_setting("welcome_text",
-        "👋 Привет! Выбери тариф и получи доступ к каналу.")
+        "👋 Здравствуйте! Пожалуйста, выберите чат, тариф, оплатите полписку и получите доступ к чату.")
 
     sub = await db.get_active_subscription(message.from_user.id)
     if sub:
@@ -24,7 +24,7 @@ async def cmd_start(message: Message):
         exp = datetime.fromisoformat(sub["expires_at"])
         text = (
             f"{welcome}\n\n"
-            f"✅ У тебя активна подписка: <b>{sub['tariff_name']}</b>\n"
+            f"✅ У Вас активна подписка: <b>{sub['tariff_name']}</b>\n"
             f"📅 Действует до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>"
         )
     else:
@@ -37,7 +37,7 @@ async def cmd_start(message: Message):
 @router.callback_query(F.data == "main_menu")
 async def cb_main_menu(call: CallbackQuery):
     welcome = await db.get_setting("welcome_text",
-        "👋 Выбери тариф и получи доступ к каналу.")
+        "👋 Выберите тариф и получите доступ к каналу.")
     sub = await db.get_active_subscription(call.from_user.id)
     if sub:
         from datetime import datetime
@@ -61,13 +61,13 @@ async def cb_my_subscription(call: CallbackQuery):
         from datetime import datetime
         exp = datetime.fromisoformat(sub["expires_at"])
         text = (
-            f"👤 <b>Твоя подписка</b>\n\n"
+            f"👤 <b>Ваша подписка</b>\n\n"
             f"📦 Тариф: <b>{sub['tariff_name']}</b>\n"
             f"📅 Активна до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>\n"
             f"⏳ Осталось: <b>{(exp - datetime.utcnow()).days} дн.</b>"
         )
     else:
-        text = "❌ У тебя нет активной подписки.\nВыбери тариф, чтобы получить доступ!"
+        text = "❌ У Вас нет активной подписки.\nВыберите тариф, чтобы получить доступ!"
     await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
 
 
@@ -75,7 +75,7 @@ async def cb_my_subscription(call: CallbackQuery):
 async def cb_support(call: CallbackQuery):
     from keyboards.inline import back_kb
     await call.message.edit_text(
-        "📞 <b>Поддержка</b>\n\nЕсли возникли вопросы — напишите администратору: @admin_username",
+        "📞 <b>Поддержка</b>\n\nЕсли возникли вопросы — напишите администратору: @Bulgaria_helps_Feedback_bot",
         reply_markup=back_kb(),
         parse_mode="HTML"
     )
