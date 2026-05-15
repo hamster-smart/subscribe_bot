@@ -1032,10 +1032,23 @@ def payment_methods_admin_kb(methods: list) -> object:
         link_icon = "🔗" if m["is_link"] else "📝"
         builder.row(InlineKeyboardButton(
             text=f"{status} {link_icon} {m['name']} ({m['currency']})",
-            callback_data=f"pm_toggle:{m['id']}"
+            callback_data=f"pm_card:{m['id']}"
         ))
     builder.row(InlineKeyboardButton(text="➕ Добавить метод", callback_data="pm_add"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_settings"))
+    return builder.as_markup()
+
+
+def pm_card_kb(method_id: int, is_active: int) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    toggle_text = "🔴 Отключить" if is_active else "🟢 Включить"
+    builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f"pm_toggle:{method_id}"))
+    builder.row(InlineKeyboardButton(text="✏️ Изменить реквизиты", callback_data=f"pm_edit_details:{method_id}"))
+    builder.row(InlineKeyboardButton(text="✏️ Изменить название", callback_data=f"pm_edit_name:{method_id}"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"pm_delete_confirm:{method_id}"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_payment_methods"))
     return builder.as_markup()
 
 
@@ -1065,13 +1078,146 @@ async def cb_payment_methods(call: CallbackQuery):
     )
 
 
+@router.callback_query(F.data.startswith("pm_card:"))
+async def cb_pm_card(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    await show_pm_card(call.message, method_id, edit=True)
+
+
+async def show_pm_card(target, method_id: int, edit: bool = True):
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute("SELECT * FROM payment_methods WHERE id = ?", (method_id,)) as cur:
+            m = await cur.fetchone()
+    if not m:
+        return
+    status = "🟢 Активен" if m["is_active"] else "🔴 Отключён"
+    link_type = "🔗 Ссылка-кнопка" if m["is_link"] else "📝 Текст/реквизиты"
+    text = (
+        f"💳 <b>{m['name']}</b>\n\n"
+        f"💱 Валюта: <b>{m['currency']}</b>\n"
+        f"Тип: {link_type}\n"
+        f"Статус: {status}\n\n"
+        f"<b>Реквизиты/ссылка:</b>\n"
+        f"<code>{m['details']}</code>"
+    )
+    kb = pm_card_kb(method_id, m["is_active"])
+    if edit:
+        await target.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    else:
+        await target.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
 @router.callback_query(F.data.startswith("pm_toggle:"))
 async def cb_pm_toggle(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
     method_id = int(call.data.split(":")[1])
     await db.toggle_payment_method(method_id)
+    await show_pm_card(call.message, method_id, edit=True)
+
+
+@router.callback_query(F.data.startswith("pm_delete_confirm:"))
+async def cb_pm_delete_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"pm_delete:{method_id}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"pm_card:{method_id}")
+    )
+    await call.message.edit_text(
+        "⚠️ <b>Удалить метод оплаты?</b>\n\nЭто действие нельзя отменить.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("pm_delete:"))
+async def cb_pm_delete(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    await db.delete_payment_method(method_id)
+    await call.answer("🗑 Метод удалён")
     await cb_payment_methods(call)
+
+
+class PmEditState(StatesGroup):
+    details = State()
+    name = State()
+
+
+@router.callback_query(F.data.startswith("pm_edit_details:"))
+async def cb_pm_edit_details(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    await state.update_data(pm_edit_id=method_id)
+    await state.set_state(PmEditState.details)
+    await call.message.edit_text(
+        "✏️ Введи новые реквизиты или ссылку:\n"
+        "<i>Если начинается с https:// — станет кнопкой-ссылкой, иначе — текстом</i>",
+        reply_markup=back_kb(f"pm_card:{method_id}"),
+        parse_mode="HTML"
+    )
+
+
+@router.message(PmEditState.details)
+async def handle_pm_edit_details(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    method_id = data["pm_edit_id"]
+    new_details = message.text.strip()
+    is_link = 1 if new_details.startswith("http") else 0
+    await state.set_state(None)
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE payment_methods SET details = ?, is_link = ? WHERE id = ?",
+            (new_details, is_link, method_id)
+        )
+        await dbc.commit()
+    await message.answer("✅ Реквизиты обновлены!")
+    await show_pm_card(message, method_id, edit=False)
+
+
+@router.callback_query(F.data.startswith("pm_edit_name:"))
+async def cb_pm_edit_name(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    method_id = int(call.data.split(":")[1])
+    await state.update_data(pm_edit_id=method_id)
+    await state.set_state(PmEditState.name)
+    await call.message.edit_text(
+        "✏️ Введи новое название метода оплаты:",
+        reply_markup=back_kb(f"pm_card:{method_id}")
+    )
+
+
+@router.message(PmEditState.name)
+async def handle_pm_edit_name(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    method_id = data["pm_edit_id"]
+    await state.set_state(None)
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE payment_methods SET name = ? WHERE id = ?",
+            (message.text.strip(), method_id)
+        )
+        await dbc.commit()
+    await message.answer("✅ Название обновлено!")
+    await show_pm_card(message, method_id, edit=False)
 
 
 @router.callback_query(F.data == "pm_add")
