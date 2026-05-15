@@ -684,14 +684,93 @@ async def promo_set_uses(message: Message, state: FSMContext):
 
 # ─── TARIFF MANAGEMENT ─────────────────────────────────────────────────────────
 
+# ─── TARIFF MANAGEMENT ─────────────────────────────────────────────────────────
+
+class TariffEditState(StatesGroup):
+    field = State()
+    value = State()
+
+
+class TariffAddState(StatesGroup):
+    name = State()
+    description = State()
+    days = State()
+    price = State()
+
+
+def tariff_card_kb(tariff_id: int, is_active: int) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    toggle_text = "🔴 Отключить" if is_active else "🟢 Включить"
+    builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f"tariff_toggle:{tariff_id}"))
+    builder.row(InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"tariff_edit_menu:{tariff_id}"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить навсегда", callback_data=f"tariff_delete_confirm:{tariff_id}"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_tariffs"))
+    return builder.as_markup()
+
+
+def tariff_edit_fields_kb(tariff_id: int) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📝 Название", callback_data=f"tariff_edit_field:{tariff_id}:name"))
+    builder.row(InlineKeyboardButton(text="📄 Описание", callback_data=f"tariff_edit_field:{tariff_id}:description"))
+    builder.row(InlineKeyboardButton(text="⏳ Дней", callback_data=f"tariff_edit_field:{tariff_id}:days"))
+    builder.row(InlineKeyboardButton(text="💰 Цена", callback_data=f"tariff_edit_field:{tariff_id}:price"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_edit_tariff:{tariff_id}"))
+    return builder.as_markup()
+
+
+async def show_tariff_card(target, tariff_id: int, edit: bool = True):
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute("SELECT * FROM tariffs WHERE id = ?", (tariff_id,)) as cur:
+            t = await cur.fetchone()
+    if not t:
+        return
+    status = "🟢 Активен" if t["is_active"] else "🔴 Отключён"
+    trial = " | 🎁 Пробный" if t.get("is_trial") else ""
+    text = (
+        f"📦 <b>{t['name']}</b>{trial}\n\n"
+        f"📝 {t['description'] or '—'}\n"
+        f"⏳ Дней: <b>{t['days']}</b>\n"
+        f"💰 Цена: <b>{t['price']:.0f} ₽</b>\n"
+        f"Статус: {status}"
+    )
+    kb = tariff_card_kb(tariff_id, t["is_active"])
+    if edit:
+        await target.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    else:
+        await target.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
 @router.callback_query(F.data == "admin_tariffs")
 async def cb_admin_tariffs(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
-    tariffs = await db.get_tariffs()
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute("SELECT * FROM tariffs ORDER BY sort_order, id") as cur:
+            tariffs = await cur.fetchall()
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    for t in tariffs:
+        status = "🟢" if t["is_active"] else "🔴"
+        trial = "🎁" if t.get("is_trial") else ""
+        builder.row(InlineKeyboardButton(
+            text=f"{status}{trial} {t['name']} — {t['price']:.0f}₽",
+            callback_data=f"admin_edit_tariff:{t['id']}"
+        ))
+    builder.row(InlineKeyboardButton(text="➕ Добавить тариф", callback_data="admin_add_tariff"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_settings"))
     await call.message.edit_text(
-        "📋 <b>Управление тарифами</b>",
-        reply_markup=admin_tariffs_kb(tariffs),
+        "📋 <b>Тарифы</b>\n\n🟢 активен | 🔴 отключён | 🎁 пробный",
+        reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
 
@@ -701,19 +780,7 @@ async def cb_edit_tariff(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
     tariff_id = int(call.data.split(":")[1])
-    t = await db.get_tariff(tariff_id)
-    text = (
-        f"📦 <b>{t['name']}</b>\n\n"
-        f"📝 {t['description']}\n"
-        f"⏳ Дней: {t['days']}\n"
-        f"💰 Цена: {t['price']:.0f} ₽\n"
-        f"Статус: {'🟢 Активен' if t['is_active'] else '🔴 Отключён'}"
-    )
-    await call.message.edit_text(
-        text,
-        reply_markup=tariff_edit_kb(tariff_id, t["is_active"]),
-        parse_mode="HTML"
-    )
+    await show_tariff_card(call.message, tariff_id, edit=True)
 
 
 @router.callback_query(F.data.startswith("tariff_toggle:"))
@@ -721,14 +788,178 @@ async def cb_tariff_toggle(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
     tariff_id = int(call.data.split(":")[1])
-    t = await db.get_tariff(tariff_id)
-    new_status = 0 if t["is_active"] else 1
-    await db.update_tariff(tariff_id, is_active=new_status)
-    await call.answer(f"{'🟢 Включён' if new_status else '🔴 Отключён'}")
-    t2 = await db.get_tariff(tariff_id)
-    await call.message.edit_reply_markup(
-        reply_markup=tariff_edit_kb(tariff_id, t2["is_active"])
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute("SELECT is_active FROM tariffs WHERE id = ?", (tariff_id,)) as cur:
+            t = await cur.fetchone()
+        new_status = 0 if t["is_active"] else 1
+        await dbc.execute("UPDATE tariffs SET is_active = ? WHERE id = ?", (new_status, tariff_id))
+        await dbc.commit()
+    label = "🟢 Включён" if new_status else "🔴 Отключён"
+    await call.answer(label)
+    await show_tariff_card(call.message, tariff_id, edit=True)
+
+
+# ── Редактирование полей ────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("tariff_edit_menu:"))
+async def cb_tariff_edit_menu(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    tariff_id = int(call.data.split(":")[1])
+    await call.message.edit_text(
+        "✏️ <b>Что редактировать?</b>",
+        reply_markup=tariff_edit_fields_kb(tariff_id),
+        parse_mode="HTML"
     )
+
+
+FIELD_LABELS = {
+    "name": "название",
+    "description": "описание",
+    "days": "количество дней (число)",
+    "price": "цену в рублях (число)",
+}
+
+
+@router.callback_query(F.data.startswith("tariff_edit_field:"))
+async def cb_tariff_edit_field(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    _, tariff_id, field = call.data.split(":")
+    await state.update_data(edit_tariff_id=int(tariff_id), edit_field=field)
+    await state.set_state(TariffEditState.value)
+    await call.message.edit_text(
+        f"✏️ Введи новое {FIELD_LABELS.get(field, field)}:",
+        reply_markup=back_kb(f"tariff_edit_menu:{tariff_id}")
+    )
+
+
+@router.message(TariffEditState.value)
+async def handle_tariff_field_value(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    tariff_id = data["edit_tariff_id"]
+    field = data["edit_field"]
+    value = message.text.strip()
+    await state.set_state(None)
+
+    # Валидация числовых полей
+    if field in ("days", "price"):
+        try:
+            value = int(value) if field == "days" else float(value)
+        except ValueError:
+            await message.answer("❌ Введи число. Попробуй ещё раз:", reply_markup=back_kb(f"tariff_edit_menu:{tariff_id}"))
+            await state.set_state(TariffEditState.value)
+            return
+
+    await db.update_tariff(tariff_id, **{field: value})
+    await message.answer(f"✅ Обновлено!")
+    await show_tariff_card(message, tariff_id, edit=False)
+
+
+# ── Удаление ────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("tariff_delete_confirm:"))
+async def cb_tariff_delete_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    tariff_id = int(call.data.split(":")[1])
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"tariff_delete:{tariff_id}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"admin_edit_tariff:{tariff_id}")
+    )
+    await call.message.edit_text(
+        "⚠️ <b>Удалить тариф навсегда?</b>\n\nЭто действие нельзя отменить.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("tariff_delete:"))
+async def cb_tariff_delete(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    tariff_id = int(call.data.split(":")[1])
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(__import__("config").config.DB_PATH) as dbc:
+        await dbc.execute("DELETE FROM tariffs WHERE id = ?", (tariff_id,))
+        await dbc.commit()
+    await call.answer("🗑 Тариф удалён")
+    await cb_admin_tariffs(call)
+
+
+# ── Добавление ──────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin_add_tariff")
+async def cb_admin_add_tariff(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    await state.set_state(TariffAddState.name)
+    await call.message.edit_text(
+        "➕ <b>Новый тариф</b>\n\nШаг 1/4: Введи название:\n<i>Например: 🗓 1 месяц</i>",
+        reply_markup=cancel_kb(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(TariffAddState.name)
+async def tariff_add_name(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.update_data(new_name=message.text.strip())
+    await state.set_state(TariffAddState.description)
+    await message.answer("Шаг 2/4: Введи описание:\n<i>Например: 30 дней доступа к каналу</i>", parse_mode="HTML")
+
+
+@router.message(TariffAddState.description)
+async def tariff_add_description(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.update_data(new_description=message.text.strip())
+    await state.set_state(TariffAddState.days)
+    await message.answer("Шаг 3/4: Сколько дней даёт тариф? (число):")
+
+
+@router.message(TariffAddState.days)
+async def tariff_add_days(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        days = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введи число:")
+        return
+    await state.update_data(new_days=days)
+    await state.set_state(TariffAddState.price)
+    await message.answer("Шаг 4/4: Цена в рублях (0 — бесплатно):")
+
+
+@router.message(TariffAddState.price)
+async def tariff_add_price(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        price = float(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введи число:")
+        return
+    data = await state.get_data()
+    await state.set_state(None)
+
+    tariff_id = await db.add_tariff(
+        name=data["new_name"],
+        description=data["new_description"],
+        days=data["new_days"],
+        price=price
+    )
+    await message.answer(f"✅ Тариф создан!")
+    await show_tariff_card(message, tariff_id, edit=False)
 
 
 # ─── PAYMENT METHODS MANAGEMENT ────────────────────────────────────────────────
