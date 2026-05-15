@@ -118,7 +118,7 @@ async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
                 continue  # скрыть пробный если уже использован
             label = f"{t['name']} — Бесплатно"
         else:
-            label = f"{t['name']} — {t['price']:.0f} ₽"
+            label = f"{t['name']} — {t['price']:.0f} {t['currency'] or 'RUB'}"
         builder.row(InlineKeyboardButton(
             text=label,
             callback_data=f"select_tariff_chat:{t['id']}:{chat_index}"
