@@ -2,12 +2,13 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
-def main_menu_kb() -> InlineKeyboardMarkup:
+def main_menu_kb(support_enabled: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📋 Тарифы", callback_data="show_tariffs"))
     builder.row(InlineKeyboardButton(text="👤 Моя подписка", callback_data="my_subscription"))
     builder.row(InlineKeyboardButton(text="🎟 Промокод", callback_data="enter_promo"))
-    builder.row(InlineKeyboardButton(text="📞 Поддержка", callback_data="support"))
+    if support_enabled:
+        builder.row(InlineKeyboardButton(text="📞 Поддержка", callback_data="support"))
     return builder.as_markup()
 
 
@@ -81,7 +82,7 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def settings_kb(current_action: str) -> InlineKeyboardMarkup:
+def settings_kb(current_action: str, support_enabled: str = "1") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     kick_mark = "✅" if current_action == "kick" else "◻️"
     mute_mark = "✅" if current_action == "mute" else "◻️"
@@ -91,6 +92,11 @@ def settings_kb(current_action: str) -> InlineKeyboardMarkup:
     )
     builder.row(InlineKeyboardButton(text="💳 Методы оплаты", callback_data="admin_payment_methods"))
     builder.row(InlineKeyboardButton(text="✏️ Приветствие", callback_data="edit_welcome"))
+    support_icon = "✅" if support_enabled == "1" else "❌"
+    builder.row(InlineKeyboardButton(
+        text=f"📞 Поддержка: {support_icon}",
+        callback_data="toggle_support"
+    ))
     builder.row(InlineKeyboardButton(text="📋 Тарифы", callback_data="admin_tariffs"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
     return builder.as_markup()
