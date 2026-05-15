@@ -30,7 +30,8 @@ async def cmd_start(message: Message):
     else:
         text = welcome
 
-    await message.answer(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+    support = await db.get_setting("support_enabled", "1")
+    await message.answer(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "main_menu")
@@ -48,7 +49,8 @@ async def cb_main_menu(call: CallbackQuery):
         )
     else:
         text = welcome
-    await call.message.edit_text(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+    support = await db.get_setting("support_enabled", "1")
+    await call.message.edit_text(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "my_subscription")
