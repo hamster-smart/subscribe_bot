@@ -113,6 +113,20 @@ async def init_db():
         """)
         await db.commit()
 
+        # ── Автомиграция: добавить колонки если их нет (безопасно при повторных запусках) ──
+        migrations = [
+            "ALTER TABLE tariffs ADD COLUMN is_trial INTEGER DEFAULT 0",
+            "ALTER TABLE tariffs ADD COLUMN chat_index INTEGER DEFAULT 0",
+            "ALTER TABLE subscriptions ADD COLUMN chat_index INTEGER DEFAULT 0",
+            "ALTER TABLE payments ADD COLUMN payment_method_id INTEGER DEFAULT NULL",
+        ]
+        for sql in migrations:
+            try:
+                await db.execute(sql)
+            except Exception:
+                pass  # колонка уже есть
+        await db.commit()
+
 
 # ─── USER ──────────────────────────────────────────────────────────────────────
 
