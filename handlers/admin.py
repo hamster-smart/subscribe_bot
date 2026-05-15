@@ -765,7 +765,7 @@ async def cb_admin_tariffs(call: CallbackQuery):
         status = "🟢" if t["is_active"] else "🔴"
         trial = "🎁" if t["is_trial"] else ""
         builder.row(InlineKeyboardButton(
-            text=f"{status}{trial} {t['name']} — {t['price']:.0f}₽",
+            text=f"{status}{trial} {t['name']} — {t['price']:.0f} {t['currency'] or 'RUB'}",
             callback_data=f"admin_edit_tariff:{t['id']}"
         ))
     builder.row(InlineKeyboardButton(text="➕ Добавить тариф", callback_data="admin_add_tariff"))
