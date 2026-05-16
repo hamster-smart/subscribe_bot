@@ -37,7 +37,7 @@ async def cmd_start(message: Message):
 @router.callback_query(F.data == "main_menu")
 async def cb_main_menu(call: CallbackQuery):
     welcome = await db.get_setting("welcome_text",
-        "👋 Выберите тариф и получите доступ к каналу.")
+        "👋 Выберите тариф и получите доступ к чату.")
     sub = await db.get_active_subscription(call.from_user.id)
     if sub:
         from datetime import datetime
