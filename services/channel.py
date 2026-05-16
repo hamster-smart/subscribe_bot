@@ -84,3 +84,21 @@ async def unmute_user(bot: Bot, user_id: int, chat_index: int = 0):
         logger.info(f"Unmuted user {user_id} in channel {chat_index}")
     except Exception as e:
         logger.error(f"Failed to unmute user {user_id}: {e}")
+
+
+async def grant_trial_access(bot: Bot, user_id: int, chat_index: int = 0) -> str:
+    """
+    Выдать пробный доступ — только invite-ссылка.
+    Мьют применяется позже через chat_member handler когда юзер вступит.
+    """
+    channel_id = get_channel_id(chat_index)
+    try:
+        link = await bot.create_chat_invite_link(
+            chat_id=channel_id,
+            member_limit=1,
+            name=f"trial_{user_id}"
+        )
+        return link.invite_link
+    except Exception as e:
+        logger.warning(f"Could not create trial invite link: {e}")
+        return "Обратитесь к администратору для получения ссылки."
