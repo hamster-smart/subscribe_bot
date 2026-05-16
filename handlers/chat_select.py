@@ -67,7 +67,7 @@ def pay_link_kb(url: str, tariff_id: int, chat_index: int,
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="💳 Перейти к оплате", url=url))
     builder.row(InlineKeyboardButton(
-        text="📷 Отправить квитанцию/скриншот",
+        text="📷 Отправить скриншот",
         callback_data=f"send_screenshot:{payment_id}"
     ))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
@@ -78,7 +78,7 @@ def pay_text_kb(payment_id: int) -> object:
     """Кнопки для текстовых реквизитов."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text="📷 Отправить квитанцию/скриншот",
+        text="📷 Отправить скриншот",
         callback_data=f"send_screenshot:{payment_id}"
     ))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
@@ -91,7 +91,7 @@ def pay_text_kb(payment_id: int) -> object:
 async def cb_show_tariffs_entry(call: CallbackQuery):
     """Точка входа — сначала выбор чата."""
     await call.message.edit_text(
-        "🏠 <b>Выберите чат</b>\n\nК какому чату хотите получить доступ?",
+        "🏠 <b>Выбери канал</b>\n\nК какому каналу хочешь получить доступ?",
         reply_markup=chats_kb(),
         parse_mode="HTML"
     )
@@ -127,7 +127,7 @@ async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
 
     chat_name = config.get_channel_name(chat_index)
     await call.message.edit_text(
-        f"📋 <b>Тарифы для {chat_name}</b>\n\nВыберите план:",
+        f"📋 <b>Тарифы для {chat_name}</b>\n\nВыбери план:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
@@ -184,7 +184,7 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
             f"🔗 Ссылка для вступления: {link}\n"
             f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
             f"⚠️ В пробном режиме доступно только чтение.\n"
-            f"Для участия в обсуждениях оформите платную подписку: /start"
+            f"Для участия в обсуждениях оформи платную подписку: /start"
         )
 
         await call.message.edit_text(text, parse_mode="HTML")
@@ -200,15 +200,15 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
         f"📦 <b>{tariff['name']}</b> → {chat_name}\n\n"
         f"📝 {tariff['description']}\n"
         f"⏳ Срок: <b>{tariff['days']} дней</b>\n"
-        f"💰 Стоимость: <b>{price:.0f} ₽</b>{promo_text}\n\n"
-        f"В какой валюте будет оплата?"
+        f"💰 Стоимость: <b>{price:.0f} {tariff['currency'] or 'RUB'}</b>{promo_text}\n\n"
+        f"В какой валюте оплатишь?"
     )
 
     if len(currencies) == 1:
         # Только одна валюта — сразу к методам
         currency_methods = await db.get_payment_methods(currencies[0])
         await call.message.edit_text(
-            text + f"\n\nВыберите способ оплаты ({currencies[0]}):",
+            text + f"\n\nВыбери способ оплаты ({currencies[0]}):",
             reply_markup=payment_methods_kb(tariff_id, chat_index, currencies[0], currency_methods),
             parse_mode="HTML"
         )
@@ -234,7 +234,7 @@ async def cb_choose_currency(call: CallbackQuery):
     await call.message.edit_text(
         f"💱 <b>Оплата в {currency}</b>\n\n"
         f"Тариф: {tariff['name']}\n"
-        f"Выберите способ оплаты:",
+        f"Выбери способ:",
         reply_markup=payment_methods_kb(tariff_id, chat_index, currency, methods),
         parse_mode="HTML"
     )
@@ -282,8 +282,8 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"💳 <b>{method['name']}</b>\n\n"
             f"📦 {tariff['name']} → {chat_name}\n"
             f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
-            f"Нажмите кнопку для перехода к оплате.\n"
-            f"После оплаты нужно будет отправить квитанцию/скриншот."
+            f"Нажми кнопку для перехода к оплате.\n"
+            f"После оплаты вернись и отправь скриншот."
         )
         await call.message.edit_text(
             text,
@@ -298,7 +298,7 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
             f"<b>Реквизиты для перевода:</b>\n"
             f"{method['details']}\n\n"
-            f"После оплаты отправьте квитанцию/скриншот."
+            f"После оплаты отправь скриншот."
         )
         await call.message.edit_text(
             text,
