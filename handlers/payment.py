@@ -72,8 +72,8 @@ async def handle_screenshot(message: Message, state: FSMContext, bot: Bot):
     await db.attach_screenshot(payment_id, file_id)
 
     await message.answer(
-        "✅ Скриншот получен! Ожидай подтверждения от администратора.\n"
-        "Обычно это занимает до 30 минут.",
+        "✅ Квитанция получена! Ожидайте подтверждения от администратора.\n"
+        "Обычно это занимает от нескольких минут до нескольких часов.",
         reply_markup=back_kb()
     )
 
@@ -107,7 +107,7 @@ async def handle_screenshot(message: Message, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data.startswith("awaiting_confirm:"))
 async def cb_awaiting_confirm(call: CallbackQuery):
-    await call.answer("⏳ Ожидаем подтверждения администратора. Мы уведомим тебя.", show_alert=True)
+    await call.answer("⏳ Ожидаем подтверждения администратора. Мы уведомим Вас.", show_alert=True)
 
 
 # ─── ONLINE PAYMENT (ЮКасса / Тинькофф) ────────────────────────────────────────
@@ -126,7 +126,7 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
         await _pay_tinkoff(call, tariff, final_price, promo_code, state)
     else:
         await call.answer(
-            "Онлайн-оплата временно недоступна. Используй ручной перевод.",
+            "Онлайн-оплата временно недоступна. Используйте ручной перевод.",
             show_alert=True
         )
 
@@ -182,8 +182,8 @@ async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
         await call.message.edit_text(
             f"💳 <b>Оплата через ЮКассу</b>\n\n"
             f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
-            f"Нажми кнопку для перехода к оплате.\n"
-            f"После оплаты вернись в бот — доступ откроется автоматически.",
+            f"Нажмите кнопку для перехода к оплате.\n"
+            f"После оплаты вернитесь в бот — доступ откроется автоматически.",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -248,7 +248,7 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
             await call.message.edit_text(
                 f"💳 <b>Оплата через Тинькофф</b>\n\n"
                 f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
-                f"Нажми кнопку для перехода к оплате.",
+                f"Нажмите кнопку для перехода к оплате.",
                 reply_markup=builder.as_markup(),
                 parse_mode="HTML"
             )
