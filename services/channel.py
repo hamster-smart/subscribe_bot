@@ -26,16 +26,12 @@ async def grant_access(bot: Bot, user_id: int, chat_index: int = 0) -> str:
     except Exception:
         pass
 
-    try:
-        link = await bot.create_chat_invite_link(
-            chat_id=channel_id,
-            member_limit=1,
-            name=f"user_{user_id}"
-        )
-        return link.invite_link
-    except Exception as e:
-        logger.warning(f"Could not create invite link for channel {chat_index}: {e}")
-        return "Обратитесь к администратору для получения ссылки."
+    link = await bot.create_chat_invite_link(
+        chat_id=channel_id,
+        member_limit=1,
+        name=f"user_{user_id}"
+    )
+    return link.invite_link
 
 
 async def kick_user(bot: Bot, user_id: int, chat_index: int = 0):
@@ -92,13 +88,11 @@ async def grant_trial_access(bot: Bot, user_id: int, chat_index: int = 0) -> str
     Мьют применяется позже через chat_member handler когда юзер вступит.
     """
     channel_id = get_channel_id(chat_index)
-    try:
-        link = await bot.create_chat_invite_link(
-            chat_id=channel_id,
-            member_limit=1,
-            name=f"trial_{user_id}"
-        )
-        return link.invite_link
-    except Exception as e:
-        logger.warning(f"Could not create trial invite link: {e}")
-        return "Обратитесь к администратору для получения ссылки."
+    logger.info(f"grant_trial_access: user={user_id} chat_index={chat_index} channel_id={channel_id}")
+    link = await bot.create_chat_invite_link(
+        chat_id=channel_id,
+        member_limit=1,
+        name=f"trial_{user_id}"
+    )
+    logger.info(f"Trial invite link created: {link.invite_link}")
+    return link.invite_link
