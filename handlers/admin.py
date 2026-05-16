@@ -423,6 +423,7 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         InlineKeyboardButton(text="✅ Продлить +30 дн.", callback_data=f"admin_extend:{user_id}:30"),
         InlineKeyboardButton(text="✅ +365 дн.", callback_data=f"admin_extend:{user_id}:365"),
     )
+    builder.row(InlineKeyboardButton(text="❌ Отозвать подписку", callback_data=f"admin_revoke:{user_id}"))
     if user and user["is_banned"]:
         builder.row(InlineKeyboardButton(text="✅ Разбанить в боте", callback_data=f"admin_unban_user:{user_id}"))
     else:
@@ -454,6 +455,25 @@ async def cb_admin_extend(call: CallbackQuery, bot: Bot):
     await call.answer(f"✅ Продлено на {days} дней", show_alert=False)
     await show_user_info(call.message, user_id, bot, edit=True)
 
+
+
+
+@router.callback_query(F.data.startswith("admin_revoke:"))
+async def cb_admin_revoke(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+            (user_id,)
+        )
+        await dbc.commit()
+
+    await call.answer("❌ Подписка отозвана", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
 
 @router.callback_query(F.data.startswith("admin_kick_user:"))
 async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
