@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import config
 from database import init_db
-from handlers import start, subscription, payment, admin, settings, chat_select
+from handlers import start, subscription, payment, admin, settings, chat_select, join_request
 from services.scheduler import setup_scheduler
 from middlewares.ban_check import BanCheckMiddleware
 
@@ -36,6 +36,7 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(settings.router)
     dp.include_router(chat_select.router)
+    dp.include_router(join_request.router)
 
     # Scheduler
     scheduler = AsyncIOScheduler()
