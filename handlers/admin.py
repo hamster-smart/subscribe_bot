@@ -419,10 +419,7 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
 
     # Кнопки действий
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="✅ Продлить +30 дн.", callback_data=f"admin_extend:{user_id}:30"),
-        InlineKeyboardButton(text="✅ +365 дн.", callback_data=f"admin_extend:{user_id}:365"),
-    )
+    builder.row(InlineKeyboardButton(text="🎁 Выдать подписку", callback_data=f"admin_grant:{user_id}"))
     builder.row(InlineKeyboardButton(text="❌ Отозвать подписку", callback_data=f"admin_revoke:{user_id}"))
     builder.row(InlineKeyboardButton(text="🚫 Кикнуть из канала", callback_data=f"admin_kick_user:{user_id}"))
     if user and user["is_banned"]:
@@ -437,24 +434,147 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
-@router.callback_query(F.data.startswith("admin_extend:"))
-async def cb_admin_extend(call: CallbackQuery, bot: Bot):
+@router.callback_query(F.data.startswith("admin_grant:"))
+async def cb_admin_grant(call: CallbackQuery):
+    """Выбор тарифа для выдачи подписки вручную."""
     if not is_admin(call.from_user.id):
         return
-    _, user_id, days = call.data.split(":")
-    user_id, days = int(user_id), int(days)
+    user_id = int(call.data.split(":")[1])
 
-    sub = await db.get_active_subscription(user_id)
-    if sub:
-        await db.extend_subscription(user_id, days)
-    else:
-        # Нет активной — создать новую с дефолтным тарифом
-        tariffs = await db.get_tariffs()
-        tariff_id = tariffs[0]["id"] if tariffs else 1
-        await db.create_subscription(user_id, tariff_id, days)
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute(
+            "SELECT * FROM tariffs WHERE is_active = 1 AND is_trial = 0 ORDER BY sort_order, id"
+        ) as cur:
+            tariffs = await dbc.execute(
+                "SELECT * FROM tariffs WHERE is_active = 1 AND is_trial = 0 ORDER BY sort_order, id"
+            )
+            tariffs = await tariffs.fetchall()
 
-    await call.answer(f"✅ Продлено на {days} дней", show_alert=False)
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    for t in tariffs:
+        chat_name = __import__("config").config.get_channel_name(t["chat_index"] or 0)
+        builder.row(InlineKeyboardButton(
+            text=f"{t['name']} → {chat_name} ({t['days']} дн.)",
+            callback_data=f"admin_grant_tariff:{user_id}:{t['id']}"
+        ))
+    # Кастомный срок
+    builder.row(InlineKeyboardButton(
+        text="✏️ Указать срок вручную",
+        callback_data=f"admin_grant_custom:{user_id}"
+    ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_user_info:{user_id}"))
+
+    await call.message.edit_text(
+        "🎁 Выбери тариф для выдачи подписки:",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_grant_tariff:"))
+async def cb_admin_grant_tariff(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    _, user_id, tariff_id = call.data.split(":")
+    user_id, tariff_id = int(user_id), int(tariff_id)
+
+    tariff = await db.get_tariff(tariff_id)
+    chat_index = tariff["chat_index"] or 0
+
+    await db.create_subscription(user_id, tariff_id, tariff["days"])
+
+    # Выдать invite-ссылку
+    from services.channel import grant_access
+    link = await grant_access(bot, user_id, chat_index)
+
+    # Уведомить пользователя
+    from datetime import datetime, timedelta
+    expires = datetime.utcnow() + timedelta(days=tariff["days"])
+    chat_name = __import__("config").config.get_channel_name(chat_index)
+    try:
+        await bot.send_message(
+            user_id,
+            f"✅ <b>Вам выдана подписка!</b>\n\n"
+            f"📦 Тариф: {tariff['name']} → {chat_name}\n"
+            f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y')}</b>\n"
+            f"🔗 Ссылка: {link}",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    await call.answer(f"✅ Подписка выдана на {tariff['days']} дней")
     await show_user_info(call.message, user_id, bot, edit=True)
+
+
+class GrantCustomState(StatesGroup):
+    days = State()
+
+
+@router.callback_query(F.data.startswith("admin_grant_custom:"))
+async def cb_admin_grant_custom(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+    await state.update_data(grant_user_id=user_id)
+    await state.set_state(GrantCustomState.days)
+    await call.message.edit_text(
+        "✏️ Введи количество дней подписки:",
+        reply_markup=back_kb(f"admin_grant:{user_id}")
+    )
+
+
+@router.message(GrantCustomState.days)
+async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        days = int(message.text.strip())
+        if days < 1:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи целое число дней от 1:")
+        return
+
+    data = await state.get_data()
+    user_id = data["grant_user_id"]
+    await state.set_state(None)
+
+    # Использовать первый не-пробный тариф как базу
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute(
+            "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY sort_order LIMIT 1"
+        ) as cur:
+            base_tariff = await cur.fetchone()
+
+    tariff_id = base_tariff["id"] if base_tariff else 2
+    chat_index = base_tariff["chat_index"] or 0 if base_tariff else 0
+
+    await db.create_subscription(user_id, tariff_id, days)
+
+    from services.channel import grant_access
+    link = await grant_access(bot, user_id, chat_index)
+
+    from datetime import datetime, timedelta
+    expires = datetime.utcnow() + timedelta(days=days)
+    try:
+        await bot.send_message(
+            user_id,
+            f"✅ <b>Вам выдана подписка на {days} дней!</b>\n\n"
+            f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y')}</b>\n"
+            f"🔗 Ссылка: {link}",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    await message.answer(f"✅ Подписка на {days} дней выдана!")
+    await show_user_info(message, user_id, bot, edit=False)
 
 
 
@@ -593,32 +713,158 @@ async def handle_broadcast(message: Message, state: FSMContext, bot: Bot):
 class PromoCreateState(StatesGroup):
     code = State()
     discount = State()
-    uses = State()
+    tariff = State()
+    uses_total = State()
+    uses_per_user = State()
+
+
+async def show_promo_list(target, edit: bool = True):
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute(
+            "SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 20"
+        ) as cur:
+            promos = await cur.fetchall()
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+
+    if promos:
+        for p in promos:
+            active = "🟢" if p["is_active"] else "🔴"
+            disc = f"-{p['discount_pct']}%" if p["discount_pct"] else "бесплатно"
+            builder.row(InlineKeyboardButton(
+                text=f"{active} {p['code']} | {disc}",
+                callback_data=f"promo_card:{p['id']}"
+            ))
+        text = "🎟 <b>Промокоды</b>"
+    else:
+        text = "🎟 Промокодов пока нет."
+
+    builder.row(InlineKeyboardButton(text="➕ Создать промокод", callback_data="create_promo"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
+
+    if edit:
+        await target.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    else:
+        await target.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+
+
+async def show_promo_card(target, promo_id: int, edit: bool = True):
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+        async with dbc.execute("SELECT * FROM promo_codes WHERE id = ?", (promo_id,)) as cur:
+            p = await cur.fetchone()
+    if not p:
+        return
+
+    bot_username = None
+    try:
+        from config import config as cfg
+        # Get bot username from config or cache
+        pass
+    except Exception:
+        pass
+
+    disc = f"-{p['discount_pct']}%" if p["discount_pct"] else "100% (бесплатно)"
+    uses = f"{p['uses_left']} ост." if p["uses_left"] != -1 else "∞"
+    per_user = str(p["max_uses_per_user"]) if p["max_uses_per_user"] else "1"
+    active = "🟢 Активен" if p["is_active"] else "🔴 Отключён"
+
+    bot_username = await db.get_setting("bot_username", "BOT_USERNAME")
+    tariff_info = "Любой (юзер выбирает сам)"
+    if p["tariff_id"]:
+        tariff = await db.get_tariff(p["tariff_id"])
+        if tariff:
+            chat_name = __import__("config").config.get_channel_name(p["chat_index"] or 0)
+            tariff_info = f"{tariff['name']} → {chat_name}"
+
+    text = (
+        f"🎟 <b>{p['code']}</b>\n\n"
+        f"💸 Скидка: <b>{disc}</b>\n"
+        f"📦 Тариф: {tariff_info}\n"
+        f"🔢 Активаций всего: <b>{uses}</b> (использовано: {p['uses_total']})\n"
+        f"👤 Макс. на юзера: <b>{per_user}</b>\n"
+        f"Статус: {active}\n\n"
+        f"🔗 Ссылка: <code>https://t.me/{bot_username}?start={p['code']}</code>"
+    )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    toggle = "🔴 Отключить" if p["is_active"] else "🟢 Включить"
+    builder.row(InlineKeyboardButton(text=toggle, callback_data=f"promo_toggle:{promo_id}"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"promo_delete_confirm:{promo_id}"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_promos"))
+
+    if edit:
+        await target.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    else:
+        await target.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_promos")
 async def cb_admin_promos(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
-    async with __import__("aiosqlite").connect(config.DB_PATH) as dbc:
-        dbc.row_factory = __import__("aiosqlite").Row
-        async with dbc.execute(
-            "SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 15"
-        ) as cur:
-            promos = await cur.fetchall()
+    await show_promo_list(call.message, edit=True)
 
-    if promos:
-        lines = []
-        for p in promos:
-            disc = f"-{p['discount_pct']}%" if p['discount_pct'] else f"-{p['discount_rub']:.0f}₽"
-            uses = f"{p['uses_left']} ост." if p["uses_left"] != -1 else "∞"
-            active = "🟢" if p["is_active"] else "🔴"
-            lines.append(f"{active} <code>{p['code']}</code> | {disc} | {uses} | использ.: {p['uses_total']}")
-        text = "<b>🎟 Промокоды:</b>\n\n" + "\n".join(lines)
-    else:
-        text = "🎟 Промокодов пока нет."
 
-    await call.message.edit_text(text, reply_markup=promos_kb(), parse_mode="HTML")
+@router.callback_query(F.data.startswith("promo_card:"))
+async def cb_promo_card(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    promo_id = int(call.data.split(":")[1])
+    await show_promo_card(call.message, promo_id, edit=True)
+
+
+@router.callback_query(F.data.startswith("promo_toggle:"))
+async def cb_promo_toggle(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    promo_id = int(call.data.split(":")[1])
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE promo_codes SET is_active = CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id = ?",
+            (promo_id,)
+        )
+        await dbc.commit()
+    await show_promo_card(call.message, promo_id, edit=True)
+
+
+@router.callback_query(F.data.startswith("promo_delete_confirm:"))
+async def cb_promo_delete_confirm(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    promo_id = int(call.data.split(":")[1])
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Удалить", callback_data=f"promo_delete:{promo_id}"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"promo_card:{promo_id}")
+    )
+    await call.message.edit_text(
+        "⚠️ Удалить промокод навсегда?",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("promo_delete:"))
+async def cb_promo_delete(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return
+    promo_id = int(call.data.split(":")[1])
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute("DELETE FROM promo_codes WHERE id = ?", (promo_id,))
+        await dbc.commit()
+    await call.answer("🗑 Удалён")
+    await show_promo_list(call.message, edit=True)
 
 
 @router.callback_query(F.data == "create_promo")
@@ -627,13 +873,16 @@ async def cb_create_promo(call: CallbackQuery, state: FSMContext):
         return
     await state.set_state(PromoCreateState.code)
     await call.message.edit_text(
-        "🎟 Введи код промокода (латиница/цифры):",
-        reply_markup=cancel_kb()
+        "🎟 <b>Новый промокод</b>\n\nШаг 1/5: Введи код (латиница/цифры):\n<i>Пример: SALE30, VIP2024</i>",
+        reply_markup=cancel_kb(),
+        parse_mode="HTML"
     )
 
 
 @router.message(PromoCreateState.code)
 async def promo_set_code(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
     code = message.text.strip().upper()
     if not code.isalnum():
         await message.answer("❌ Только буквы и цифры. Попробуй ещё раз:")
@@ -641,69 +890,118 @@ async def promo_set_code(message: Message, state: FSMContext):
     await state.update_data(code=code)
     await state.set_state(PromoCreateState.discount)
     await message.answer(
-        "💸 Введи скидку:\n• <b>15%</b> — скидка в процентах\n• <b>100р</b> — скидка в рублях",
+        "Шаг 2/5: Введи скидку в процентах:\n"
+        "<b>100</b> — бесплатный доступ\n"
+        "<b>50</b> — скидка 50%\n"
+        "<b>0</b> — без скидки (просто ссылка на тариф)",
         parse_mode="HTML"
     )
 
 
 @router.message(PromoCreateState.discount)
 async def promo_set_discount(message: Message, state: FSMContext):
-    text = message.text.strip().lower()
-    disc_pct = 0
-    disc_rub = 0.0
-    if text.endswith("%"):
-        try:
-            disc_pct = int(text[:-1])
-        except ValueError:
-            await message.answer("❌ Неверный формат. Пример: 15%")
-            return
-    elif text.endswith("р") or text.endswith("руб") or text.endswith("rub"):
-        try:
-            disc_rub = float(text.replace("р", "").replace("руб", "").replace("rub", "").strip())
-        except ValueError:
-            await message.answer("❌ Неверный формат. Пример: 100р")
-            return
-    else:
-        try:
-            disc_pct = int(text)
-        except ValueError:
-            await message.answer("❌ Введи скидку. Пример: 15% или 100р")
-            return
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        pct = int(message.text.strip().replace("%", ""))
+        if not 0 <= pct <= 100:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи число от 0 до 100:")
+        return
+    await state.update_data(disc_pct=pct)
+    await state.set_state(PromoCreateState.tariff)
 
-    await state.update_data(disc_pct=disc_pct, disc_rub=disc_rub)
-    await state.set_state(PromoCreateState.uses)
+    # Показать список тарифов для привязки
+    tariffs = await db.get_tariffs()
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    for t in tariffs:
+        chat_name = __import__("config").config.get_channel_name(t["chat_index"] or 0)
+        builder.row(InlineKeyboardButton(
+            text=f"{t['name']} → {chat_name} | {t['price']:.0f} {t['currency'] or 'RUB'}",
+            callback_data=f"promo_pick_tariff:{t['id']}:{t['chat_index'] or 0}"
+        ))
+    builder.row(InlineKeyboardButton(text="🔓 Без привязки к тарифу", callback_data="promo_pick_tariff:0:0"))
     await message.answer(
-        "🔢 Сколько раз можно использовать?\n<b>0</b> — неограниченно",
+        "Шаг 3/5: К какому тарифу привязать промокод?",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("promo_pick_tariff:"), PromoCreateState.tariff)
+async def promo_pick_tariff(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split(":")
+    tariff_id = int(parts[1])
+    chat_index = int(parts[2])
+    await state.update_data(
+        promo_tariff_id=tariff_id if tariff_id != 0 else None,
+        promo_chat_index=chat_index if tariff_id != 0 else None
+    )
+    await state.set_state(PromoCreateState.uses_total)
+    await call.message.edit_text(
+        "Шаг 4/5: Сколько раз можно активировать промокод всего?\n"
+        "<b>0</b> — неограниченно",
         parse_mode="HTML"
     )
 
 
-@router.message(PromoCreateState.uses)
-async def promo_set_uses(message: Message, state: FSMContext):
+@router.message(PromoCreateState.uses_total)
+async def promo_set_uses_total(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
     try:
         uses = int(message.text.strip())
     except ValueError:
         await message.answer("❌ Введи число:")
         return
+    await state.update_data(uses_total=uses)
+    await state.set_state(PromoCreateState.uses_per_user)
+    await message.answer(
+        "Шаг 5/5: Сколько раз один юзер может использовать промокод?\n"
+        "<b>1</b> — только один раз (рекомендуется)",
+        parse_mode="HTML"
+    )
+
+
+@router.message(PromoCreateState.uses_per_user)
+async def promo_set_uses_per_user(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    try:
+        per_user = int(message.text.strip())
+        if per_user < 1:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введи число от 1:")
+        return
 
     data = await state.get_data()
-    uses_left = -1 if uses == 0 else uses
+    await state.set_state(None)
+
+    uses_left = -1 if data["uses_total"] == 0 else data["uses_total"]
+
     promo_id = await db.create_promo(
         code=data["code"],
         discount_pct=data.get("disc_pct", 0),
-        discount_rub=data.get("disc_rub", 0.0),
-        uses_left=uses_left
+        uses_left=uses_left,
+        tariff_id=data.get("promo_tariff_id"),
+        chat_index=data.get("promo_chat_index"),
+        max_uses_per_user=per_user
     )
-    disc = f"{data['disc_pct']}%" if data.get("disc_pct") else f"{data.get('disc_rub', 0):.0f}₽"
+
+    disc = f"{data['disc_pct']}%" if data.get("disc_pct") else "0%"
+    uses_str = "∞" if uses_left == -1 else str(uses_left)
     await message.answer(
-        f"✅ Промокод создан!\n\n"
-        f"<code>{data['code']}</code>\n"
+        f"✅ <b>Промокод создан!</b>\n\n"
+        f"Код: <code>{data['code']}</code>\n"
         f"Скидка: {disc}\n"
-        f"Использований: {'∞' if uses_left == -1 else uses_left}",
-        reply_markup=back_kb("admin_menu"),
+        f"Активаций: {uses_str} | на юзера: {per_user}\n\n"
+        f"🔗 Ссылка:\n<code>https://t.me/{await db.get_setting('bot_username', 'BOT_USERNAME')}?start={data['code']}</code>",
+        reply_markup=back_kb("admin_promos"),
         parse_mode="HTML"
     )
-    await state.set_state(None)
 
 
 # ─── TARIFF MANAGEMENT ─────────────────────────────────────────────────────────
