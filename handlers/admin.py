@@ -424,6 +424,7 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         InlineKeyboardButton(text="✅ +365 дн.", callback_data=f"admin_extend:{user_id}:365"),
     )
     builder.row(InlineKeyboardButton(text="❌ Отозвать подписку", callback_data=f"admin_revoke:{user_id}"))
+    builder.row(InlineKeyboardButton(text="🚫 Кикнуть из канала", callback_data=f"admin_kick_user:{user_id}"))
     if user and user["is_banned"]:
         builder.row(InlineKeyboardButton(text="✅ Разбанить в боте", callback_data=f"admin_unban_user:{user_id}"))
     else:
