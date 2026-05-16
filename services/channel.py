@@ -19,8 +19,18 @@ async def grant_access(bot: Bot, user_id: int, chat_index: int = 0) -> str:
             permissions=ChatPermissions(
                 can_send_messages=True,
                 can_send_media_messages=True,
-                can_send_other_messages=True,
+                can_send_other_messages=False,
                 can_add_web_page_previews=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=False,
+                can_send_audios=False,
+                can_send_voice_notes=False,
+                can_send_documents=True,
+                can_send_polls=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
             )
         )
     except Exception:
@@ -73,8 +83,18 @@ async def unmute_user(bot: Bot, user_id: int, chat_index: int = 0):
             permissions=ChatPermissions(
                 can_send_messages=True,
                 can_send_media_messages=True,
-                can_send_other_messages=True,
+                can_send_other_messages=False,
                 can_add_web_page_previews=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=False,
+                can_send_audios=False,
+                can_send_voice_notes=False,
+                can_send_documents=True,
+                can_send_polls=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_pin_messages=False,
             )
         )
         logger.info(f"Unmuted user {user_id} in channel {chat_index}")
