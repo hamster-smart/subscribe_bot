@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import config
 from database import init_db
-from handlers import start, subscription, payment, admin, settings, chat_select, join_request
+from handlers import start, subscription, payment, admin, settings, chat_select, join_request, chat_member
 from services.scheduler import setup_scheduler
 from middlewares.ban_check import BanCheckMiddleware
 
@@ -37,6 +37,7 @@ async def main():
     dp.include_router(settings.router)
     dp.include_router(chat_select.router)
     dp.include_router(join_request.router)
+    dp.include_router(chat_member.router)
 
     # Scheduler
     scheduler = AsyncIOScheduler()
@@ -44,7 +45,7 @@ async def main():
     scheduler.start()
 
     logger.info("Bot started!")
-    await dp.start_polling(bot)
+    await dp.start_polling(bot, allowed_updates=["message", "callback_query", "chat_join_request", "chat_member"])
 
 
 if __name__ == "__main__":
