@@ -171,25 +171,60 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
             return
         # Создать бесплатную подписку
         await db.create_subscription(call.from_user.id, tariff_id, tariff["days"])
-        from services.channel import grant_access, mute_user
+        from services.channel import mute_user
         from datetime import datetime, timedelta
-        link = await grant_access(call.bot, call.from_user.id, chat_index)
         expires = datetime.utcnow() + timedelta(days=tariff["days"])
         chat_name = config.get_channel_name(chat_index)
-        # Мьютим — пробный только читает
-        # Мьют применяем после небольшой задержки, чтобы пользователь успел вступить
-        import asyncio
-        asyncio.get_event_loop().call_later(
-            30, lambda: asyncio.ensure_future(mute_user(call.bot, call.from_user.id, chat_index))
-        )
-        text = (
-            f"🎁 <b>Пробный доступ активирован!</b>\n\n"
-            f"📺 Канал: {chat_name}\n"
-            f"🔗 Ссылка: {link}\n"
-            f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-            f"⚠️ В пробном режиме доступно только чтение.\n"
-            f"Для участия в обсуждениях оформи платную подписку: /start"
-        )
+
+        # Проверить есть ли pending заявка — одобрить её
+        pending = await db.get_join_request(call.from_user.id, chat_index)
+        if pending:
+            try:
+                await call.bot.approve_chat_join_request(
+                    chat_id=pending["chat_id"],
+                    user_id=call.from_user.id
+                )
+                await db.delete_join_request(call.from_user.id, pending["chat_id"])
+                # Мьютим через 10 сек после вступления
+                import asyncio
+                asyncio.get_event_loop().call_later(
+                    10, lambda: asyncio.ensure_future(
+                        mute_user(call.bot, call.from_user.id, chat_index)
+                    )
+                )
+                text = (
+                    f"🎁 <b>Пробный доступ активирован!</b>\n\n"
+                    f"📺 Канал: {chat_name}\n"
+                    f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+                    f"⚠️ В пробном режиме доступно только чтение.\n"
+                    f"Для участия в обсуждениях оформи платную подписку: /start"
+                )
+            except Exception:
+                text = (
+                    f"🎁 <b>Пробный доступ активирован!</b>\n\n"
+                    f"📺 Канал: {chat_name}\n"
+                    f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+                    f"⚠️ Заявка в канал уже истекла. Подай заявку повторно — доступ откроется автоматически."
+                )
+        else:
+            # Заявки нет — выдать одноразовую ссылку
+            from services.channel import grant_access
+            link = await grant_access(call.bot, call.from_user.id, chat_index)
+            import asyncio
+            asyncio.get_event_loop().call_later(
+                10, lambda: asyncio.ensure_future(
+                    mute_user(call.bot, call.from_user.id, chat_index)
+                )
+            )
+            text = (
+                f"🎁 <b>Пробный доступ активирован!</b>\n\n"
+                f"📺 Канал: {chat_name}\n"
+                f"🔗 Ссылка для вступления: {link}\n"
+                f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+                f"⚠️ В пробном режиме доступно только чтение.\n"
+                f"Для участия в обсуждениях оформи платную подписку: /start"
+            )
+
         await call.message.edit_text(text, parse_mode="HTML")
         return
     # ─────────────────────────────────────────────────────────────────────────
