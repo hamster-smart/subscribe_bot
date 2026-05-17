@@ -95,10 +95,13 @@ async def import_users(xlsx_path: str):
                     full_name = excluded.full_name
             """, (user_id, username, full_name or ""))
 
-            # Проверить нет ли уже активной подписки
-            async with db.execute(
-                "SELECT id FROM subscriptions WHERE user_id = ? AND is_active = 1", (user_id,)
-            ) as cur:
+            # Проверить нет ли уже активной подписки на чат 0
+            async with db.execute("""
+                SELECT s.id FROM subscriptions s
+                JOIN tariffs t ON t.id = s.tariff_id
+                WHERE s.user_id = ? AND s.is_active = 1
+                  AND (t.chat_index = 0 OR t.id = 99)
+            """, (user_id,)) as cur:
                 existing = await cur.fetchone()
 
             if existing:
