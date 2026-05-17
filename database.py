@@ -36,7 +36,6 @@ async def init_db():
                 currency    TEXT DEFAULT 'RUB',
                 is_active   INTEGER DEFAULT 1,
                 sort_order  INTEGER DEFAULT 0,
-                chat_index  INTEGER DEFAULT 0,
                 is_trial    INTEGER DEFAULT 0
             );
 
@@ -127,6 +126,7 @@ async def init_db():
             "ALTER TABLE tariffs ADD COLUMN chat_index INTEGER DEFAULT 0",
             "ALTER TABLE subscriptions ADD COLUMN chat_index INTEGER DEFAULT 0",
             "ALTER TABLE payments ADD COLUMN payment_method_id INTEGER DEFAULT NULL",
+            "ALTER TABLE payments ADD COLUMN chat_index INTEGER DEFAULT 0",
             "ALTER TABLE promo_codes ADD COLUMN tariff_id INTEGER DEFAULT NULL",
             "ALTER TABLE promo_codes ADD COLUMN chat_index INTEGER DEFAULT NULL",
             "ALTER TABLE promo_codes ADD COLUMN max_uses_per_user INTEGER DEFAULT 1",
@@ -170,7 +170,6 @@ async def get_all_users() -> list:
 # ─── TARIFFS ───────────────────────────────────────────────────────────────────
 
 async def get_tariffs(chat_index: int | None = None) -> list:
-    """Если chat_index указан — только тарифы этого чата."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         if chat_index is not None:
@@ -214,23 +213,23 @@ async def update_tariff(tariff_id: int, **kwargs):
 # ─── SUBSCRIPTIONS ─────────────────────────────────────────────────────────────
 
 async def get_active_subscription(user_id: int, chat_index: int | None = None) -> aiosqlite.Row | None:
-    """Если chat_index указан — ищет подписку только для этого чата."""
+    """Если chat_index указан — ищет подписку только для этого чата (по s.chat_index)."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         if chat_index is not None:
             async with db.execute("""
-                SELECT s.*, t.name as tariff_name, t.chat_index, t.is_trial
+                SELECT s.*, t.name as tariff_name, t.is_trial, s.chat_index
                 FROM subscriptions s
                 JOIN tariffs t ON t.id = s.tariff_id
                 WHERE s.user_id = ? AND s.is_active = 1
                   AND datetime(s.expires_at) > datetime('now')
-                  AND t.chat_index = ?
+                  AND s.chat_index = ?
                 ORDER BY s.expires_at DESC LIMIT 1
             """, (user_id, chat_index)) as cur:
                 return await cur.fetchone()
         else:
             async with db.execute("""
-                SELECT s.*, t.name as tariff_name, t.chat_index, t.is_trial
+                SELECT s.*, t.name as tariff_name, t.is_trial, s.chat_index
                 FROM subscriptions s
                 JOIN tariffs t ON t.id = s.tariff_id
                 WHERE s.user_id = ? AND s.is_active = 1
@@ -241,16 +240,11 @@ async def get_active_subscription(user_id: int, chat_index: int | None = None) -
 
 
 async def create_subscription(user_id: int, tariff_id: int, days: int) -> int:
-    now = datetime.utcnow()
-    expires = datetime(now.year, now.month, now.day + days
-                       if now.day + days <= 28 else now.day,
-                       now.hour, now.minute, now.second)
-    # Use timedelta to be safe
     from datetime import timedelta
+    now = datetime.utcnow()
     expires = now + timedelta(days=days)
 
     async with aiosqlite.connect(DB_PATH) as db:
-        # Deactivate old subs
         await db.execute(
             "UPDATE subscriptions SET is_active = 0 WHERE user_id = ?", (user_id,)
         )
@@ -315,12 +309,13 @@ async def deactivate_subscription(sub_id: int):
 # ─── PAYMENTS ──────────────────────────────────────────────────────────────────
 
 async def create_payment(user_id: int, tariff_id: int, amount: float,
-                         method: str, promo_code: str | None = None) -> int:
+                         method: str, promo_code: str | None = None,
+                         chat_index: int = 0) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
-            INSERT INTO payments (user_id, tariff_id, amount, method, promo_code)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, tariff_id, amount, method, promo_code))
+            INSERT INTO payments (user_id, tariff_id, amount, method, promo_code, chat_index)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, tariff_id, amount, method, promo_code, chat_index))
         await db.commit()
         return cur.lastrowid
 
