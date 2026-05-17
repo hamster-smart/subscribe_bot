@@ -169,13 +169,21 @@ async def get_all_users() -> list:
 
 # ─── TARIFFS ───────────────────────────────────────────────────────────────────
 
-async def get_tariffs() -> list:
+async def get_tariffs(chat_index: int | None = None) -> list:
+    """Если chat_index указан — только тарифы этого чата."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM tariffs WHERE is_active = 1 ORDER BY sort_order"
-        ) as cur:
-            return await cur.fetchall()
+        if chat_index is not None:
+            async with db.execute(
+                "SELECT * FROM tariffs WHERE is_active = 1 AND chat_index = ? ORDER BY sort_order",
+                (chat_index,)
+            ) as cur:
+                return await cur.fetchall()
+        else:
+            async with db.execute(
+                "SELECT * FROM tariffs WHERE is_active = 1 ORDER BY sort_order"
+            ) as cur:
+                return await cur.fetchall()
 
 
 async def get_tariff(tariff_id: int) -> aiosqlite.Row | None:
@@ -205,18 +213,31 @@ async def update_tariff(tariff_id: int, **kwargs):
 
 # ─── SUBSCRIPTIONS ─────────────────────────────────────────────────────────────
 
-async def get_active_subscription(user_id: int) -> aiosqlite.Row | None:
+async def get_active_subscription(user_id: int, chat_index: int | None = None) -> aiosqlite.Row | None:
+    """Если chat_index указан — ищет подписку только для этого чата."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("""
-            SELECT s.*, t.name as tariff_name
-            FROM subscriptions s
-            JOIN tariffs t ON t.id = s.tariff_id
-            WHERE s.user_id = ? AND s.is_active = 1
-              AND datetime(s.expires_at) > datetime('now')
-            ORDER BY s.expires_at DESC LIMIT 1
-        """, (user_id,)) as cur:
-            return await cur.fetchone()
+        if chat_index is not None:
+            async with db.execute("""
+                SELECT s.*, t.name as tariff_name, t.chat_index, t.is_trial
+                FROM subscriptions s
+                JOIN tariffs t ON t.id = s.tariff_id
+                WHERE s.user_id = ? AND s.is_active = 1
+                  AND datetime(s.expires_at) > datetime('now')
+                  AND t.chat_index = ?
+                ORDER BY s.expires_at DESC LIMIT 1
+            """, (user_id, chat_index)) as cur:
+                return await cur.fetchone()
+        else:
+            async with db.execute("""
+                SELECT s.*, t.name as tariff_name, t.chat_index, t.is_trial
+                FROM subscriptions s
+                JOIN tariffs t ON t.id = s.tariff_id
+                WHERE s.user_id = ? AND s.is_active = 1
+                  AND datetime(s.expires_at) > datetime('now')
+                ORDER BY s.expires_at DESC LIMIT 1
+            """, (user_id,)) as cur:
+                return await cur.fetchone()
 
 
 async def create_subscription(user_id: int, tariff_id: int, days: int) -> int:
