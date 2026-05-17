@@ -81,6 +81,14 @@ async def init_db():
                 created_at  TEXT DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS pending_join_requests (
+                user_id     INTEGER NOT NULL,
+                chat_id     INTEGER NOT NULL,
+                chat_index  INTEGER DEFAULT 0,
+                created_at  TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (user_id, chat_id)
+            );
+
             CREATE TABLE IF NOT EXISTS payment_methods (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT NOT NULL,
@@ -119,6 +127,9 @@ async def init_db():
             "ALTER TABLE tariffs ADD COLUMN chat_index INTEGER DEFAULT 0",
             "ALTER TABLE subscriptions ADD COLUMN chat_index INTEGER DEFAULT 0",
             "ALTER TABLE payments ADD COLUMN payment_method_id INTEGER DEFAULT NULL",
+            "ALTER TABLE promo_codes ADD COLUMN tariff_id INTEGER DEFAULT NULL",
+            "ALTER TABLE promo_codes ADD COLUMN chat_index INTEGER DEFAULT NULL",
+            "ALTER TABLE promo_codes ADD COLUMN max_uses_per_user INTEGER DEFAULT 1",
         ]
         for sql in migrations:
             try:
@@ -369,14 +380,31 @@ async def use_promo(code: str):
 
 
 async def create_promo(code: str, discount_pct: int = 0, discount_rub: float = 0,
-                       uses_left: int = -1, valid_until: str | None = None) -> int:
+                       uses_left: int = -1, valid_until: str | None = None,
+                       tariff_id: int | None = None, chat_index: int | None = None,
+                       max_uses_per_user: int = 1) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
-            INSERT INTO promo_codes (code, discount_pct, discount_rub, uses_left, valid_until)
-            VALUES (?, ?, ?, ?, ?)
-        """, (code.upper(), discount_pct, discount_rub, uses_left, valid_until))
+            INSERT INTO promo_codes
+                (code, discount_pct, discount_rub, uses_left, valid_until,
+                 tariff_id, chat_index, max_uses_per_user)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (code.upper(), discount_pct, discount_rub, uses_left, valid_until,
+              tariff_id, chat_index, max_uses_per_user))
         await db.commit()
         return cur.lastrowid
+
+
+async def get_user_promo_uses(user_id: int, code: str) -> int:
+    """Сколько раз юзер уже активировал этот промокод."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT COUNT(*) as c FROM payments
+            WHERE user_id = ? AND promo_code = ? AND status = 'confirmed'
+        """, (user_id, code.upper())) as cur:
+            row = await cur.fetchone()
+            return row["c"]
 
 
 # ─── SETTINGS ──────────────────────────────────────────────────────────────────
@@ -494,4 +522,34 @@ async def toggle_payment_method(method_id: int):
 async def delete_payment_method(method_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM payment_methods WHERE id = ?", (method_id,))
+        await db.commit()
+
+
+# ─── PENDING JOIN REQUESTS ─────────────────────────────────────────────────────
+
+async def save_join_request(user_id: int, chat_id: int, chat_index: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT OR REPLACE INTO pending_join_requests (user_id, chat_id, chat_index)
+            VALUES (?, ?, ?)
+        """, (user_id, chat_id, chat_index))
+        await db.commit()
+
+
+async def get_join_request(user_id: int, chat_index: int) -> aiosqlite.Row | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM pending_join_requests
+            WHERE user_id = ? AND chat_index = ?
+        """, (user_id, chat_index)) as cur:
+            return await cur.fetchone()
+
+
+async def delete_join_request(user_id: int, chat_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM pending_join_requests WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
         await db.commit()
