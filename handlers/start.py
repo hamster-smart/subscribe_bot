@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 
 import database as db
 from keyboards.inline import main_menu_kb
