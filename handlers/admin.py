@@ -50,14 +50,53 @@ async def cb_admin_menu(call: CallbackQuery):
 async def cb_admin_stats(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
-    stats = await db.get_stats()
+    import aiosqlite as _aiosqlite
+    from config import config as cfg
+
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _aiosqlite.Row
+
+        total_users = (await (await dbc.execute("SELECT COUNT(*) as c FROM users")).fetchone())["c"]
+        pending = (await (await dbc.execute(
+            "SELECT COUNT(*) as c FROM payments WHERE status='pending'"
+        )).fetchone())["c"]
+        revenue = (await (await dbc.execute(
+            "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE status='confirmed'"
+        )).fetchone())["s"]
+        today_rev = (await (await dbc.execute(
+            "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now')"
+        )).fetchone())["s"]
+
+        # По каждому чату
+        chat_stats = []
+        for idx in range(2):
+            name = cfg.get_channel_name(idx)
+            row = await (await dbc.execute("""
+                SELECT COUNT(*) as c FROM subscriptions s
+                JOIN tariffs t ON t.id = s.tariff_id
+                WHERE s.is_active=1 AND datetime(s.expires_at)>datetime('now')
+                  AND (t.chat_index=? OR t.id IN (98,99))
+            """, (idx,))).fetchone()
+            # Точный подсчёт по chat_index тарифа
+            row2 = await (await dbc.execute("""
+                SELECT COUNT(*) as c FROM subscriptions s
+                JOIN tariffs t ON t.id = s.tariff_id
+                WHERE s.is_active=1 AND datetime(s.expires_at)>datetime('now')
+                  AND t.chat_index=?
+            """, (idx,))).fetchone()
+            chat_stats.append((name, row2["c"]))
+
+    chat1_name, chat1_cnt = chat_stats[0]
+    chat2_name, chat2_cnt = chat_stats[1]
+
     text = (
         f"📊 <b>Статистика</b>\n\n"
-        f"👥 Всего пользователей: <b>{stats['total_users']}</b>\n"
-        f"✅ Активных подписок: <b>{stats['active_subs']}</b>\n"
-        f"💰 Выручка всего: <b>{stats['total_revenue']:.0f} ₽</b>\n"
-        f"📅 Сегодня: <b>{stats['today_revenue']:.0f} ₽</b>\n"
-        f"⏳ Ожидают подтверждения: <b>{stats['pending_count']}</b>"
+        f"👥 Всего пользователей: <b>{total_users}</b>\n\n"
+        f"<b>{chat1_name}:</b> {chat1_cnt} активных\n"
+        f"<b>{chat2_name}:</b> {chat2_cnt} активных\n\n"
+        f"💰 Выручка всего: <b>{revenue:.0f} ₽</b>\n"
+        f"📅 Сегодня: <b>{today_rev:.0f} ₽</b>\n"
+        f"⏳ Ожидают подтверждения: <b>{pending}</b>"
     )
     await call.message.edit_text(text, reply_markup=back_kb("admin_menu"), parse_mode="HTML")
 
@@ -182,15 +221,36 @@ async def cb_admin_reject(call: CallbackQuery, bot: Bot):
 # ─── SUBSCRIBERS LIST ──────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_subs")
-async def cb_admin_subs(call: CallbackQuery, bot: Bot):
+async def cb_admin_subs(call: CallbackQuery):
+    """Показать выбор чата для выгрузки."""
+    if not is_admin(call.from_user.id):
+        return
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    from config import config as cfg
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"📋 {cfg.CHANNEL_1_NAME}",
+        callback_data="admin_subs_export:0"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📋 {cfg.CHANNEL_2_NAME}",
+        callback_data="admin_subs_export:1"
+    ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
+    await call.message.edit_text(
+        "👥 <b>Выгрузка подписчиков</b>\n\nВыбери канал:",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("admin_subs_export:"))
+async def cb_admin_subs_export(call: CallbackQuery, bot: Bot):
+    chat_index = int(call.data.split(":")[1])
     if not is_admin(call.from_user.id):
         return
     import aiosqlite as _aiosqlite
-    import io
-    from datetime import datetime
-    from openpyxl import Workbook
-    from aiogram.types import BufferedInputFile
-
     async with _aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = _aiosqlite.Row
         async with dbc.execute("""
@@ -200,25 +260,32 @@ async def cb_admin_subs(call: CallbackQuery, bot: Bot):
             JOIN users u ON u.user_id = s.user_id
             JOIN tariffs t ON t.id = s.tariff_id
             WHERE s.is_active = 1 AND datetime(s.expires_at) > datetime('now')
+              AND t.chat_index = ?
             ORDER BY s.expires_at ASC
-        """) as cur:
+        """, (chat_index,)) as cur:
             subs = await cur.fetchall()
 
+    from config import config as cfg
+    chat_name = cfg.get_channel_name(chat_index)
+
     if not subs:
-        await call.message.edit_text("Нет активных подписчиков.", reply_markup=back_kb("admin_menu"))
+        await call.message.edit_text(
+            f"Нет активных подписчиков в {chat_name}.",
+            reply_markup=back_kb("admin_subs")
+        )
         return
 
-    # Создать xlsx в памяти
+    import io
+    from datetime import datetime, datetime as dt
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from aiogram.types import BufferedInputFile
+
     wb = Workbook()
     ws = wb.active
-    ws.title = "Подписчики"
-
-    # Заголовки
+    ws.title = f"Подписчики {chat_index+1}"
     headers = ["User ID", "Username", "Полное имя", "Тариф", "Начало", "Истекает", "Дней осталось"]
     ws.append(headers)
-
-    # Стиль заголовков
-    from openpyxl.styles import Font, PatternFill, Alignment
     for col in range(1, len(headers) + 1):
         cell = ws.cell(row=1, column=col)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -229,7 +296,6 @@ async def cb_admin_subs(call: CallbackQuery, bot: Bot):
     for s in subs:
         exp = datetime.fromisoformat(s["expires_at"])
         start = datetime.fromisoformat(s["starts_at"])
-        days_left = (exp - now).days
         ws.append([
             s["user_id"],
             f"@{s['username']}" if s["username"] else "—",
@@ -237,34 +303,31 @@ async def cb_admin_subs(call: CallbackQuery, bot: Bot):
             s["tariff_name"],
             start.strftime("%d.%m.%Y"),
             exp.strftime("%d.%m.%Y"),
-            days_left,
+            (exp - now).days,
         ])
 
-    # Авто-ширина колонок
     for col in ws.columns:
         max_len = max((len(str(cell.value or "")) for cell in col), default=10)
         ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 40)
 
-    # Сохранить в буфер
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
 
-    from datetime import datetime as dt
-    filename = f"subscribers_{dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"subs_chat{chat_index+1}_{dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
     await call.message.edit_text(
-        f"👥 <b>Активных подписчиков: {len(subs)}</b>\n\nФормирую файл...",
+        f"👥 <b>{chat_name}: {len(subs)} активных</b>\n\nФормирую файл...",
         parse_mode="HTML"
     )
     await bot.send_document(
         call.from_user.id,
         document=BufferedInputFile(buf.read(), filename=filename),
-        caption=f"📊 Подписчики на {dt.now().strftime('%d.%m.%Y %H:%M')} — {len(subs)} чел."
+        caption=f"📊 {chat_name} | {dt.now().strftime('%d.%m.%Y %H:%M')} | {len(subs)} чел."
     )
     await call.message.edit_text(
-        f"👥 Файл отправлен — {len(subs)} активных подписчиков.",
-        reply_markup=back_kb("admin_menu"),
+        f"👥 Файл отправлен — {len(subs)} активных в {chat_name}.",
+        reply_markup=back_kb("admin_subs"),
         parse_mode="HTML"
     )
 
