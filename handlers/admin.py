@@ -508,12 +508,9 @@ async def cb_admin_grant(call: CallbackQuery):
     async with _aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = _aiosqlite.Row
         async with dbc.execute(
-            "SELECT * FROM tariffs WHERE is_active = 1 AND is_trial = 0 ORDER BY sort_order, id"
+            "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY chat_index, sort_order, id"
         ) as cur:
-            tariffs = await dbc.execute(
-                "SELECT * FROM tariffs WHERE is_active = 1 AND is_trial = 0 ORDER BY sort_order, id"
-            )
-            tariffs = await tariffs.fetchall()
+            tariffs = await cur.fetchall()
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -975,12 +972,18 @@ async def promo_set_discount(message: Message, state: FSMContext):
     await state.update_data(disc_pct=pct)
     await state.set_state(PromoCreateState.tariff)
 
-    # Показать список тарифов для привязки
-    tariffs = await db.get_tariffs()
+    # Показать тарифы ВСЕХ чатов для привязки промокода
+    import aiosqlite as _ai
+    async with _ai.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = _ai.Row
+        async with dbc.execute(
+            "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY chat_index, sort_order"
+        ) as cur:
+            all_tariffs = await cur.fetchall()
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
     builder = InlineKeyboardBuilder()
-    for t in tariffs:
+    for t in all_tariffs:
         chat_name = __import__("config").config.get_channel_name(t["chat_index"] or 0)
         builder.row(InlineKeyboardButton(
             text=f"{t['name']} → {chat_name} | {t['price']:.0f} {t['currency'] or 'RUB'}",
