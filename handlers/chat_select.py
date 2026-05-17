@@ -102,7 +102,6 @@ async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
     chat_index = int(call.data.split(":")[1])
     await state.update_data(chat_index=chat_index)
 
-    # Тарифы строго по этому чату
     chat_tariffs = await db.get_tariffs(chat_index=chat_index)
 
     if not chat_tariffs:
@@ -262,7 +261,8 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
         tariff_id=tariff_id,
         amount=final_price,
         method=f"manual_{method['name']}",
-        promo_code=promo_code
+        promo_code=promo_code,
+        chat_index=chat_index
     )
     if promo_code:
         await db.use_promo(promo_code)
