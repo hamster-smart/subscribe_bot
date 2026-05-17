@@ -44,6 +44,8 @@ async def main():
     setup_scheduler(scheduler, bot)
     scheduler.start()
 
+    me = await bot.get_me()
+    await db.set_setting("bot_username", me.username)
     logger.info("Bot started!")
     await dp.start_polling(bot, allowed_updates=["message", "callback_query", "chat_join_request", "chat_member"])
 
