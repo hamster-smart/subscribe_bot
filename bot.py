@@ -6,6 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import config
 from database import init_db
+import database as db
 from handlers import start, subscription, payment, admin, settings, chat_select, join_request, chat_member
 from services.scheduler import setup_scheduler
 from middlewares.ban_check import BanCheckMiddleware
