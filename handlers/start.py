@@ -4,83 +4,175 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 
 import database as db
-from keyboards.inline import main_menu_kb
+from keyboards.inline import main_menu_kb, back_kb
+from config import config
 
 router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     await db.upsert_user(
         message.from_user.id,
         message.from_user.username,
         message.from_user.full_name
     )
-    welcome = await db.get_setting("welcome_text",
-        "👋 Привет! Выбери тариф и получи доступ к каналу.")
 
-    sub = await db.get_active_subscription(message.from_user.id)
-    if sub:
-        from datetime import datetime
-        exp = datetime.fromisoformat(sub["expires_at"])
-        text = (
-            f"{welcome}\n\n"
-            f"✅ У тебя активна подписка: <b>{sub['tariff_name']}</b>\n"
-            f"📅 Действует до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>"
-        )
-    else:
-        text = welcome
+    # Проверить deep link — промокод (?start=PROMO)
+    args = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
+    if args and not args.startswith("paid_"):
+        promo_code = args.upper()
+        promo = await db.get_promo(promo_code)
+        if promo:
+            user_uses = await db.get_user_promo_uses(message.from_user.id, promo_code)
+            max_per_user = promo["max_uses_per_user"] if promo["max_uses_per_user"] else 1
+            if user_uses >= max_per_user:
+                support = await db.get_setting("support_enabled", "1")
+                await message.answer(
+                    f"❌ Промокод <b>{promo_code}</b> уже использован тобой.",
+                    parse_mode="HTML",
+                    reply_markup=main_menu_kb(support == "1")
+                )
+                return
 
+            await state.update_data(promo_code=promo_code)
+
+            # Если промокод привязан к конкретному тарифу — сразу к нему
+            if promo["tariff_id"]:
+                tariff = await db.get_tariff(promo["tariff_id"])
+                chat_index = promo["chat_index"] if promo["chat_index"] is not None else 0
+                if tariff:
+                    price = tariff["price"]
+                    if promo["discount_pct"]:
+                        price = price * (1 - promo["discount_pct"] / 100)
+                    await state.update_data(
+                        selected_tariff_id=tariff["id"],
+                        chat_index=chat_index,
+                        final_price=price
+                    )
+                    disc_text = f" (-{promo['discount_pct']}%)" if promo["discount_pct"] else " (бесплатно)" if price == 0 else ""
+                    chat_name = config.get_channel_name(chat_index)
+
+                    # Показать методы оплаты
+                    methods = await db.get_payment_methods()
+                    currencies = list(dict.fromkeys(m["currency"] for m in methods))
+
+                    from handlers.chat_select import currency_kb, payment_methods_kb
+                    if price == 0:
+                        # Бесплатный промокод — сразу выдать доступ
+                        await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"])
+                        from services.channel import grant_access
+                        from datetime import datetime, timedelta
+                        link = await grant_access(message.bot, message.from_user.id, chat_index)
+                        expires = datetime.utcnow() + timedelta(days=tariff["days"])
+                        await message.answer(
+                            f"🎟 Промокод <b>{promo_code}</b> активирован!{disc_text}\n\n"
+                            f"✅ <b>Доступ выдан!</b>\n"
+                            f"📺 Канал: {chat_name}\n"
+                            f"🔗 Ссылка: {link}\n"
+                            f"📅 До: {expires.strftime('%d.%m.%Y')}",
+                            parse_mode="HTML"
+                        )
+                        return
+                    elif len(currencies) == 1:
+                        currency_methods = await db.get_payment_methods(currencies[0])
+                        await message.answer(
+                            f"🎟 Промокод <b>{promo_code}</b>{disc_text}\n\n"
+                            f"📦 {tariff['name']} → {chat_name}\n"
+                            f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
+                            f"Выбери способ оплаты:",
+                            reply_markup=payment_methods_kb(tariff["id"], chat_index, currencies[0], currency_methods),
+                            parse_mode="HTML"
+                        )
+                    else:
+                        await message.answer(
+                            f"🎟 Промокод <b>{promo_code}</b>{disc_text}\n\n"
+                            f"📦 {tariff['name']} → {chat_name}\n"
+                            f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
+                            f"Выбери валюту оплаты:",
+                            reply_markup=currency_kb(tariff["id"], chat_index, currencies),
+                            parse_mode="HTML"
+                        )
+                    return
+
+            # Промокод без тарифа — показать меню
+            await message.answer(
+                f"🎟 Промокод <b>{promo_code}</b> активирован! Скидка применится при выборе тарифа.",
+                parse_mode="HTML"
+            )
+
+    welcome = await db.get_setting("welcome_text", "👋 Привет! Выбери тариф и получи доступ к каналу.")
     support = await db.get_setting("support_enabled", "1")
+
+    from datetime import datetime
+    lines = []
+    for idx in range(2):
+        sub = await db.get_active_subscription(message.from_user.id, chat_index=idx)
+        if sub:
+            exp = datetime.fromisoformat(sub["expires_at"])
+            chat_name = config.get_channel_name(idx)
+            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime('%d.%m.%Y')}")
+
+    text = welcome + ("\n\n" + "\n".join(lines) if lines else "")
     await message.answer(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "main_menu")
 async def cb_main_menu(call: CallbackQuery):
-    welcome = await db.get_setting("welcome_text",
-        "👋 Выбери тариф и получи доступ к каналу.")
-    sub = await db.get_active_subscription(call.from_user.id)
-    if sub:
-        from datetime import datetime
-        exp = datetime.fromisoformat(sub["expires_at"])
-        text = (
-            f"{welcome}\n\n"
-            f"✅ Активная подписка: <b>{sub['tariff_name']}</b>\n"
-            f"📅 До: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>"
-        )
-    else:
-        text = welcome
+    welcome = await db.get_setting("welcome_text", "👋 Выбери тариф и получи доступ к каналу.")
     support = await db.get_setting("support_enabled", "1")
+
+    from datetime import datetime
+    lines = []
+    for idx in range(2):
+        sub = await db.get_active_subscription(call.from_user.id, chat_index=idx)
+        if sub:
+            exp = datetime.fromisoformat(sub["expires_at"])
+            chat_name = config.get_channel_name(idx)
+            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime('%d.%m.%Y')}")
+
+    text = welcome + ("\n\n" + "\n".join(lines) if lines else "")
     await call.message.edit_text(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "my_subscription")
 async def cb_my_subscription(call: CallbackQuery):
-    sub = await db.get_active_subscription(call.from_user.id)
-    from keyboards.inline import back_kb
-    if sub:
-        from datetime import datetime
-        exp = datetime.fromisoformat(sub["expires_at"])
-        text = (
-            f"👤 <b>Твоя подписка</b>\n\n"
-            f"📦 Тариф: <b>{sub['tariff_name']}</b>\n"
-            f"📅 Активна до: <b>{exp.strftime('%d.%m.%Y %H:%M')}</b>\n"
-            f"⏳ Осталось: <b>{(exp - datetime.utcnow()).days} дн.</b>"
-        )
+    from datetime import datetime
+    lines = []
+    for idx in range(2):
+        sub = await db.get_active_subscription(call.from_user.id, chat_index=idx)
+        if sub:
+            exp = datetime.fromisoformat(sub["expires_at"])
+            chat_name = config.get_channel_name(idx)
+            lines.append(
+                f"📺 <b>{chat_name}</b>\n"
+                f"  📦 {sub['tariff_name']}\n"
+                f"  📅 До: {exp.strftime('%d.%m.%Y')}\n"
+                f"  ⏳ Осталось: {(exp - datetime.utcnow()).days} дн."
+            )
+
+    if lines:
+        text = "👤 <b>Твои подписки</b>\n\n" + "\n\n".join(lines)
     else:
-        text = "❌ У тебя нет активной подписки.\nВыбери тариф, чтобы получить доступ!"
+        text = "❌ У тебя нет активных подписок.\nВыбери тариф, чтобы получить доступ!"
     await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "support")
 async def cb_support(call: CallbackQuery, state: FSMContext):
+    support_enabled = await db.get_setting("support_enabled", "1")
+    if support_enabled != "1":
+        await call.answer("Поддержка временно недоступна.", show_alert=True)
+        return
+
     from aiogram.fsm.state import State, StatesGroup
-    from keyboards.inline import back_kb
-    await state.set_state("support_waiting_message")
+    # Редиректим в support handler
+    from handlers.support import SupportState
+    await state.set_state(SupportState.waiting_message)
     await call.message.edit_text(
         "📞 <b>Поддержка</b>\n\n"
-        "Напиши своё сообщение — мы ответим в этом чате.\n\n"
-        "<i>Можно отправить текст, фото или документ.</i>",
-        reply_markup=back_kb(),
+        "Опиши свой вопрос — мы ответим в ближайшее время.\n\n"
+        "Отправь сообщение (текст или фото):",
+        reply_markup=back_kb("main_menu"),
         parse_mode="HTML"
     )
