@@ -46,6 +46,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     if promo["discount_pct"]:
                         price = price * (1 - promo["discount_pct"] / 100)
                     await state.update_data(
+                        promo_code=promo_code,
                         selected_tariff_id=tariff["id"],
                         chat_index=chat_index,
                         final_price=price
