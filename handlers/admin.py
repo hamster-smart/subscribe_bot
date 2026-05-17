@@ -160,12 +160,13 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
 
     await db.confirm_payment(payment_id, call.from_user.id)
     tariff = await db.get_tariff(payment["tariff_id"])
+    chat_index = payment["chat_index"] if "chat_index" in payment.keys() else 0
     await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"])
 
     # Снять мьют если был (пробный → платный)
     from services.channel import unmute_user
-    await unmute_user(bot, payment["user_id"])
-    link = await grant_access(bot, payment["user_id"])
+    await unmute_user(bot, payment["user_id"], chat_index)
+    link = await grant_access(bot, payment["user_id"], chat_index)
     from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
 
