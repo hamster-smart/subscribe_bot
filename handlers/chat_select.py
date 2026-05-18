@@ -136,6 +136,9 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
     _, tariff_id, chat_index = call.data.split(":")
     tariff_id, chat_index = int(tariff_id), int(chat_index)
 
+    # Всегда обновляем chat_index в state — главная точка истины
+    await state.update_data(chat_index=chat_index)
+
     tariff = await db.get_tariff(tariff_id)
     data = await state.get_data()
     promo_code = data.get("promo_code")
@@ -154,7 +157,6 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
 
     await state.update_data(
         selected_tariff_id=tariff_id,
-        chat_index=chat_index,
         final_price=price
     )
 
@@ -219,9 +221,12 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("choose_currency:"))
-async def cb_choose_currency(call: CallbackQuery):
+async def cb_choose_currency(call: CallbackQuery, state: FSMContext):
     _, tariff_id, chat_index, currency = call.data.split(":")
     tariff_id, chat_index = int(tariff_id), int(chat_index)
+
+    # Синхронизируем state при навигации назад/вперёд
+    await state.update_data(chat_index=chat_index)
 
     methods = await db.get_payment_methods(currency)
     if not methods:
@@ -243,6 +248,9 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
     parts = call.data.split(":")
     tariff_id, chat_index, currency, method_id = int(parts[1]), int(parts[2]), parts[3], int(parts[4])
 
+    # Обновляем chat_index при каждом шаге выбора
+    await state.update_data(chat_index=chat_index)
+
     tariff = await db.get_tariff(tariff_id)
     data = await state.get_data()
     final_price = data.get("final_price", tariff["price"])
@@ -255,7 +263,7 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
         await call.answer("Метод не найден", show_alert=True)
         return
 
-    # Создать платёж в БД
+    # Создать платёж в БД — chat_index сохраняется в записи платежа
     payment_id = await db.create_payment(
         user_id=call.from_user.id,
         tariff_id=tariff_id,
