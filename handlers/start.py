@@ -40,7 +40,13 @@ async def cmd_start(message: Message, state: FSMContext):
             # Если промокод привязан к конкретному тарифу — сразу к нему
             if promo["tariff_id"]:
                 tariff = await db.get_tariff(promo["tariff_id"])
-                chat_index = promo["chat_index"] if promo["chat_index"] is not None else 0
+                # chat_index: из промокода → из тарифа → 0
+                chat_index = promo.get("chat_index")
+                if chat_index is None:
+                    chat_index = tariff.get("chat_index", 0) if tariff else 0
+                if chat_index is None:
+                    chat_index = 0
+
                 if tariff:
                     price = tariff["price"]
                     if promo["discount_pct"]:
