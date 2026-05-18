@@ -67,7 +67,8 @@ async def cmd_start(message: Message, state: FSMContext):
                             tariff_id=tariff["id"],
                             amount=0,
                             method="promo_100",
-                            promo_code=promo_code
+                            promo_code=promo_code,
+                            chat_index=chat_index
                         )
                         await db.confirm_payment(payment_id, admin_id=0)
                         await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"], chat_index)
