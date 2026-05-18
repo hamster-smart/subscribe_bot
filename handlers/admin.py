@@ -56,12 +56,20 @@ async def cb_admin_stats(call: CallbackQuery):
         pending = (await (await dbc.execute(
             "SELECT COUNT(*) as c FROM payments WHERE status='pending'"
         )).fetchone())["c"]
-        revenue = (await (await dbc.execute(
-            "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE status='confirmed'"
-        )).fetchone())["s"]
-        today_rev = (await (await dbc.execute(
-            "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now')"
-        )).fetchone())["s"]
+        # выручка по валютам — всего
+        async with dbc.execute(
+            "SELECT COALESCE(currency,'RUB') as cur, COALESCE(SUM(amount),0) as s "
+            "FROM payments WHERE status='confirmed' "
+            "GROUP BY COALESCE(currency,'RUB') ORDER BY cur"
+        ) as _cur:
+            revenue_rows = await _cur.fetchall()
+        # выручка по валютам — сегодня
+        async with dbc.execute(
+            "SELECT COALESCE(currency,'RUB') as cur, COALESCE(SUM(amount),0) as s "
+            "FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now') "
+            "GROUP BY COALESCE(currency,'RUB') ORDER BY cur"
+        ) as _cur2:
+            today_rows = await _cur2.fetchall()
         chat_stats = []
         for idx in range(2):
             name = cfg.get_channel_name(idx)
@@ -79,9 +87,19 @@ async def cb_admin_stats(call: CallbackQuery):
         f"👥 <b>Пользователей:</b> {total_users}\n"
         f"<b>{chat1_name}:</b> {chat1_cnt}\n"
         f"<b>{chat2_name}:</b> {chat2_cnt}\n\n"
-        f"💰 <b>Выручка всего:</b> {revenue:.0f}\n"
-        f"📅 <b>Сегодня:</b> {today_rev:.0f}\n"
-        f"⏳ <b>Ожидают:</b> {pending}"
+        "💰 <b>Выручка всего:</b>\n"
+        + "\n".join(
+            f"  {CURRENCY_SYMBOLS.get(r['cur'], r['cur'])} {r['s']:.0f} {r['cur']}"
+            for r in revenue_rows
+        )
+        + ("\n" if revenue_rows else "")
+        + "\n📅 <b>Сегодня:</b>\n"
+        + "\n".join(
+            f"  {CURRENCY_SYMBOLS.get(r['cur'], r['cur'])} {r['s']:.0f} {r['cur']}"
+            for r in today_rows
+        )
+        + ("\n" if today_rows else "нет\n")
+        + f"\n⏳ <b>Ожидают:</b> {pending}"
     )
     await call.message.edit_text(text, reply_markup=back_kb("admin_menu"), parse_mode="HTML")
 
