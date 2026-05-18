@@ -313,12 +313,12 @@ async def deactivate_subscription(sub_id: int):
 
 async def create_payment(user_id: int, tariff_id: int, amount: float,
                          method: str, promo_code: str | None = None,
-                         chat_index: int = 0) -> int:
+                         chat_index: int = 0, currency: str = "RUB") -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("""
-            INSERT INTO payments (user_id, tariff_id, amount, method, promo_code, chat_index)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, tariff_id, amount, method, promo_code, chat_index))
+            INSERT INTO payments (user_id, tariff_id, amount, method, promo_code, chat_index, currency)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, tariff_id, amount, method, promo_code, chat_index, currency))
         await db.commit()
         return cur.lastrowid
 
