@@ -4,6 +4,6 @@ apscheduler==3.10.4
 pydantic-settings==2.3.4
 aiohttp==3.9.5
 yookassa==3.4.3        # ЮКасса (pip install yookassa)
-# uvicorn==0.30.1      # Для webhook_server (раскомментируй если нужен)
-uvicorn==0.30.1
+uvicorn==0.30.1        # Для webhook_server (раскомментируй если нужен)
 openpyxl>=3.1.0
+fastapi==0.115.0
