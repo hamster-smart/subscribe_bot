@@ -32,14 +32,14 @@ def fmt_amount(amount, currency: str) -> str:
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
         return
-    await message.answer("<b>👑 Панель администратора</b>", reply_markup=admin_menu_kb, parse_mode="HTML")
+    await message.answer("<b>👑 Панель администратора</b>", reply_markup=admin_menu_kb(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_menu")
 async def cb_admin_menu(call: CallbackQuery):
     if not is_admin(call.from_user.id):
         return
-    await call.message.edit_text("<b>👑 Панель администратора</b>", reply_markup=admin_menu_kb, parse_mode="HTML")
+    await call.message.edit_text("<b>👑 Панель администратора</b>", reply_markup=admin_menu_kb(), parse_mode="HTML")
 
 
 # ─── STATS ───────────────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ async def cb_admin_find_user(call: CallbackQuery, state: FSMContext):
     await state.set_state(UserLookupState.waiting_query)
     await call.message.edit_text(
         "<b>🔍 Поиск пользователя</b>\n\nВведи Telegram ID или username:",
-        reply_markup=cancel_kb, parse_mode="HTML"
+        reply_markup=cancel_kb(), parse_mode="HTML"
     )
 
 
@@ -671,7 +671,7 @@ async def cb_admin_broadcast(call: CallbackQuery, state: FSMContext):
     await state.set_state(BroadcastState.waiting_message)
     await call.message.edit_text(
         "<b>📢 Рассылка</b>\n\nОтправь сообщение (текст, фото, видео). Поддерживается HTML-форматирование.",
-        reply_markup=cancel_kb, parse_mode="HTML"
+        reply_markup=cancel_kb(), parse_mode="HTML"
     )
 
 
@@ -851,7 +851,7 @@ async def cb_create_promo(call: CallbackQuery, state: FSMContext):
     await call.message.edit_text(
         "<b>1/5 · Введи код промокода</b>\n\nТолько буквы и цифры, до 15 символов.\n"
         "<i>Пример: SALE30, VIP2024</i>",
-        reply_markup=cancel_kb, parse_mode="HTML"
+        reply_markup=cancel_kb(), parse_mode="HTML"
     )
 
 
@@ -1213,7 +1213,7 @@ async def cb_admin_add_tariff(call: CallbackQuery, state: FSMContext):
     await state.set_state(TariffAddState.name)
     await call.message.edit_text(
         "<b>1/4 · Название тарифа</b>\n\n<i>Пример: 1 месяц</i>",
-        reply_markup=cancel_kb, parse_mode="HTML"
+        reply_markup=cancel_kb(), parse_mode="HTML"
     )
 
 
@@ -1505,7 +1505,7 @@ async def cb_pm_add(call: CallbackQuery, state: FSMContext):
     await state.set_state(PaymentMethodState.name)
     await call.message.edit_text(
         "<b>1/4 · Название метода оплаты</b>\n\n<i>Пример: Сбербанк, IBAN EUR, Крипто USDT</i>",
-        reply_markup=cancel_kb, parse_mode="HTML"
+        reply_markup=cancel_kb(), parse_mode="HTML"
     )
 
 
