@@ -118,7 +118,7 @@ async def cb_admin_pending(call: CallbackQuery):
         return
     await call.message.edit_text(f"⏳ <b>{len(payments)} платежей</b> ожидают проверки...", parse_mode="HTML")
     for p in payments:
-        currency = p.get("currency") or "RUB"
+        currency = (p["currency"] if "currency" in p.keys() and p["currency"] else "RUB")
         amount_str = fmt_amount(p["amount"], currency)
         text = (
             f"💳 <b>Платёж #{p['id']}</b>\n"
@@ -160,7 +160,7 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
     link = await grant_access(bot, payment["user_id"], chat_index)
     from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
-    currency = payment.get("currency") or tariff.get("currency") or "RUB"
+    currency = (payment["currency"] if "currency" in payment.keys() and payment["currency"] else (tariff["currency"] if "currency" in tariff.keys() and tariff["currency"] else "RUB"))
     amount_str = fmt_amount(payment["amount"], currency)
     try:
         await bot.send_message(
@@ -410,7 +410,7 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
                 status_map = {"confirmed": "✅", "pending": "⏳", "rejected": "❌"}
                 icon = status_map.get(p["status"], "?")
                 created = datetime.fromisoformat(p["created_at"]).strftime("%d.%m.%Y")
-                currency = p.get("currency") or "RUB"
+                currency = (p["currency"] if "currency" in p.keys() and p["currency"] else "RUB")
                 amount_str = fmt_amount(p["amount"], currency)
                 text += f"{icon} {amount_str} · {p['method']} · {created}\n"
 
@@ -607,7 +607,7 @@ async def cb_admin_grant_tariff(call: CallbackQuery, bot: Bot):
     from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
     chat_name = config.get_channel_name(chat_index)
-    currency = tariff.get("currency") or "RUB"
+    currency = (tariff["currency"] if "currency" in tariff.keys() and tariff["currency"] else "RUB")
     try:
         await bot.send_message(
             user_id,
