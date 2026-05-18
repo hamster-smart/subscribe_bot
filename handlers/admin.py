@@ -19,7 +19,6 @@ def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
 
-
 # ─── ADMIN MENU ────────────────────────────────────────────────────────────────
 
 @router.message(Command("admin"))
@@ -67,17 +66,9 @@ async def cb_admin_stats(call: CallbackQuery):
             "SELECT COALESCE(SUM(amount),0) as s FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now')"
         )).fetchone())["s"]
 
-        # По каждому чату
         chat_stats = []
         for idx in range(2):
             name = cfg.get_channel_name(idx)
-            row = await (await dbc.execute("""
-                SELECT COUNT(*) as c FROM subscriptions s
-                JOIN tariffs t ON t.id = s.tariff_id
-                WHERE s.is_active=1 AND datetime(s.expires_at)>datetime('now')
-                  AND (t.chat_index=? OR t.id IN (98,99))
-            """, (idx,))).fetchone()
-            # Точный подсчёт по chat_index тарифа
             row2 = await (await dbc.execute("""
                 SELECT COUNT(*) as c FROM subscriptions s
                 JOIN tariffs t ON t.id = s.tariff_id
@@ -163,7 +154,6 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
     chat_index = payment["chat_index"] if payment["chat_index"] is not None else 0
     await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"], chat_index)
 
-    # Снять мьют если был (пробный → платный)
     from services.channel import unmute_user
     await unmute_user(bot, payment["user_id"], chat_index)
     link = await grant_access(bot, payment["user_id"], chat_index)
@@ -223,7 +213,6 @@ async def cb_admin_reject(call: CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data == "admin_subs")
 async def cb_admin_subs(call: CallbackQuery):
-    """Показать выбор чата для выгрузки."""
     if not is_admin(call.from_user.id):
         return
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -333,8 +322,6 @@ async def cb_admin_subs_export(call: CallbackQuery, bot: Bot):
     )
 
 
-
-
 # ─── USER LOOKUP ───────────────────────────────────────────────────────────────
 
 class UserLookupState(StatesGroup):
@@ -369,7 +356,6 @@ async def handle_user_lookup(message: Message, state: FSMContext, bot: Bot):
     async with _aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = _aiosqlite.Row
 
-        # Поиск по ID, username или имени
         if query.isdigit():
             sql = "SELECT * FROM users WHERE user_id = ?"
             params = (int(query),)
@@ -387,7 +373,6 @@ async def handle_user_lookup(message: Message, state: FSMContext, bot: Bot):
         )
         return
 
-    # Если нашли несколько — показать список для выбора
     if len(users) > 1:
         builder = InlineKeyboardBuilder()
         for u in users:
@@ -403,7 +388,6 @@ async def handle_user_lookup(message: Message, state: FSMContext, bot: Bot):
         )
         return
 
-    # Один результат — сразу показать
     await show_user_info(message, users[0]["user_id"], bot)
 
 
@@ -456,7 +440,6 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
             f"📅 В боте с: {joined}\n"
         )
 
-        # Подписки
         if subs:
             text += "\n📦 <b>Подписки:</b>\n"
             for s in subs:
@@ -472,7 +455,6 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         else:
             text += "\n📦 Подписок нет\n"
 
-        # Платежи
         if payments:
             text += "\n💳 <b>Последние платежи:</b>\n"
             for p in payments:
@@ -481,11 +463,11 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
                 created = datetime.fromisoformat(p["created_at"]).strftime("%d.%m.%Y")
                 text += f"  {icon} {p['amount']:.0f}₽ | {p['method']} | {created}\n"
 
-    # Кнопки действий
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎁 Выдать подписку", callback_data=f"admin_grant:{user_id}"))
     builder.row(InlineKeyboardButton(text="❌ Отозвать подписку", callback_data=f"admin_revoke:{user_id}"))
     builder.row(InlineKeyboardButton(text="🚫 Кикнуть из канала", callback_data=f"admin_kick_user:{user_id}"))
+    builder.row(InlineKeyboardButton(text="🔄 Сбросить пробный", callback_data=f"admin_reset_trial:{user_id}"))
     if user and user["is_banned"]:
         builder.row(InlineKeyboardButton(text="✅ Разбанить в боте", callback_data=f"admin_unban_user:{user_id}"))
     else:
@@ -498,9 +480,189 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
         await message.answer(text, reply_markup=builder.as_markup(), parse_mode="HTML")
 
 
+# ─── ВЫБОР КАНАЛА ДЛЯ ОТЗЫВА/КИКА/СБРОСА ──────────────────────────────────────
+
+def channel_choice_kb(action: str, user_id: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    from config import config as cfg
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=cfg.get_channel_name(0),
+        callback_data=f"{action}:{user_id}:0"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=cfg.get_channel_name(1),
+        callback_data=f"{action}:{user_id}:1"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="Оба канала",
+        callback_data=f"{action}:{user_id}:all"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="◀️ Назад",
+        callback_data=f"admin_user_info:{user_id}"
+    ))
+    return builder.as_markup()
+
+
+@router.callback_query(F.data.startswith("admin_revoke:"))
+async def cb_admin_revoke(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    parts = call.data.split(":")
+    user_id = int(parts[1])
+
+    if len(parts) == 2:
+        await call.message.edit_text(
+            "📺 Из какого канала отозвать подписку?",
+            reply_markup=channel_choice_kb("admin_revoke", user_id)
+        )
+        return
+
+    chat_index = parts[2]
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        if chat_index == "all":
+            await dbc.execute(
+                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            )
+        else:
+            await dbc.execute("""
+                UPDATE subscriptions SET is_active = 0
+                WHERE user_id = ? AND is_active = 1
+                  AND tariff_id IN (SELECT id FROM tariffs WHERE chat_index = ?)
+            """, (user_id, int(chat_index)))
+        await dbc.commit()
+
+    label = "всех каналов" if chat_index == "all" else config.get_channel_name(int(chat_index))
+    await call.answer(f"✅ Подписка отозвана из: {label}", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_kick_user:"))
+async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    parts = call.data.split(":")
+    user_id = int(parts[1])
+
+    if len(parts) == 2:
+        await call.message.edit_text(
+            "📺 Из какого канала кикнуть пользователя?",
+            reply_markup=channel_choice_kb("admin_kick_user", user_id)
+        )
+        return
+
+    chat_index = parts[2]
+
+    import aiosqlite as _aiosqlite
+    if chat_index == "all":
+        await kick_user(bot, user_id, 0)
+        await kick_user(bot, user_id, 1)
+        async with _aiosqlite.connect(config.DB_PATH) as dbc:
+            await dbc.execute(
+                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            )
+            await dbc.commit()
+        label = "всех каналов"
+    else:
+        idx = int(chat_index)
+        await kick_user(bot, user_id, idx)
+        async with _aiosqlite.connect(config.DB_PATH) as dbc:
+            await dbc.execute("""
+                UPDATE subscriptions SET is_active = 0
+                WHERE user_id = ? AND is_active = 1
+                  AND tariff_id IN (SELECT id FROM tariffs WHERE chat_index = ?)
+            """, (user_id, idx))
+            await dbc.commit()
+        label = config.get_channel_name(idx)
+
+    await call.answer(f"✅ Пользователь кикнут из: {label}", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_reset_trial:"))
+async def cb_admin_reset_trial(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    parts = call.data.split(":")
+    user_id = int(parts[1])
+
+    if len(parts) == 2:
+        await call.message.edit_text(
+            "🔄 Сбросить пробный тариф — выбери канал:",
+            reply_markup=channel_choice_kb("admin_reset_trial", user_id)
+        )
+        return
+
+    chat_index = parts[2]
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        if chat_index == "all":
+            await dbc.execute("""
+                DELETE FROM subscriptions
+                WHERE user_id = ?
+                  AND tariff_id IN (SELECT id FROM tariffs WHERE is_trial = 1)
+            """, (user_id,))
+            label = "обоих каналов"
+        else:
+            await dbc.execute("""
+                DELETE FROM subscriptions
+                WHERE user_id = ?
+                  AND tariff_id IN (
+                      SELECT id FROM tariffs WHERE is_trial = 1 AND chat_index = ?
+                  )
+            """, (user_id, int(chat_index)))
+            label = config.get_channel_name(int(chat_index))
+        await dbc.commit()
+
+    await call.answer(f"✅ Пробный сброшен для: {label}", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_ban_user:"))
+async def cb_admin_ban_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
+        )
+        await dbc.commit()
+
+    await call.answer("🔴 Пользователь забанен в боте", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+@router.callback_query(F.data.startswith("admin_unban_user:"))
+async def cb_admin_unban_user(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite as _aiosqlite
+    async with _aiosqlite.connect(config.DB_PATH) as dbc:
+        await dbc.execute(
+            "UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,)
+        )
+        await dbc.commit()
+
+    await call.answer("✅ Пользователь разбанен", show_alert=False)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+
+# ─── GRANT SUBSCRIPTION ────────────────────────────────────────────────────────
+
 @router.callback_query(F.data.startswith("admin_grant:"))
 async def cb_admin_grant(call: CallbackQuery):
-    """Выбор тарифа для выдачи подписки вручную."""
     if not is_admin(call.from_user.id):
         return
     user_id = int(call.data.split(":")[1])
@@ -522,7 +684,6 @@ async def cb_admin_grant(call: CallbackQuery):
             text=f"{t['name']} → {chat_name} ({t['days']} дн.)",
             callback_data=f"admin_grant_tariff:{user_id}:{t['id']}"
         ))
-    # Кастомный срок
     builder.row(InlineKeyboardButton(
         text="✏️ Указать срок вручную",
         callback_data=f"admin_grant_custom:{user_id}"
@@ -547,11 +708,9 @@ async def cb_admin_grant_tariff(call: CallbackQuery, bot: Bot):
 
     await db.create_subscription(user_id, tariff_id, tariff["days"], chat_index)
 
-    # Выдать invite-ссылку
     from services.channel import grant_access
     link = await grant_access(bot, user_id, chat_index)
 
-    # Уведомить пользователя
     from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
     chat_name = __import__("config").config.get_channel_name(chat_index)
@@ -604,7 +763,6 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
     user_id = data["grant_user_id"]
     await state.set_state(None)
 
-    # Использовать первый не-пробный тариф как базу
     import aiosqlite as _aiosqlite
     async with _aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = _aiosqlite.Row
@@ -637,151 +795,6 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
     await message.answer(f"✅ Подписка на {days} дней выдана!")
     await show_user_info(message, user_id, bot, edit=False)
 
-
-
-
-# ─── ВЫБОР КАНАЛА ДЛЯ ОТЗЫВА/КИКА ─────────────────────────────────────────────
-
-def channel_choice_kb(action: str, user_id: int):
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    from config import config as cfg
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=cfg.get_channel_name(0),
-        callback_data=f"{action}:{user_id}:0"
-    ))
-    builder.row(InlineKeyboardButton(
-        text=cfg.get_channel_name(1),
-        callback_data=f"{action}:{user_id}:1"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="Оба канала",
-        callback_data=f"{action}:{user_id}:all"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="◀️ Назад",
-        callback_data=f"admin_user_info:{user_id}"
-    ))
-    return builder.as_markup()
-
-
-@router.callback_query(F.data.startswith("admin_revoke:"))
-async def cb_admin_revoke(call: CallbackQuery, bot: Bot):
-    if not is_admin(call.from_user.id):
-        return
-    parts = call.data.split(":")
-    user_id = int(parts[1])
-
-    # Первый вызов — только user_id → показать выбор канала
-    if len(parts) == 2:
-        await call.message.edit_text(
-            "📺 Из какого канала отозвать подписку?",
-            reply_markup=channel_choice_kb("admin_revoke", user_id)
-        )
-        return
-
-    chat_index = parts[2]  # "0", "1" или "all"
-
-    import aiosqlite
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        if chat_index == "all":
-            await db.execute(
-                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
-                (user_id,)
-            )
-        else:
-            await db.execute("""
-                UPDATE subscriptions SET is_active = 0
-                WHERE user_id = ? AND is_active = 1 AND chat_index = ?
-            """, (user_id, int(chat_index)))
-        await db.commit()
-
-    if chat_index == "all":
-        label = "всех каналов"
-    else:
-        label = config.get_channel_name(int(chat_index))
-
-    await call.answer(f"✅ Подписка отозвана из: {label}", show_alert=True)
-    await show_user_info(call.message, user_id, bot, edit=True)
-
-
-@router.callback_query(F.data.startswith("admin_kick_user:"))
-async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
-    if not is_admin(call.from_user.id):
-        return
-    parts = call.data.split(":")
-    user_id = int(parts[1])
-
-    # Первый вызов — только user_id → показать выбор канала
-    if len(parts) == 2:
-        await call.message.edit_text(
-            "📺 Из какого канала кикнуть пользователя?",
-            reply_markup=channel_choice_kb("admin_kick_user", user_id)
-        )
-        return
-
-    chat_index = parts[2]  # "0", "1" или "all"
-
-    if chat_index == "all":
-        await kick_user(bot, user_id, 0)
-        await kick_user(bot, user_id, 1)
-        import aiosqlite
-        async with aiosqlite.connect(config.DB_PATH) as db:
-            await db.execute(
-                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
-                (user_id,)
-            )
-            await db.commit()
-        label = "всех каналов"
-    else:
-        idx = int(chat_index)
-        await kick_user(bot, user_id, idx)
-        import aiosqlite
-        async with aiosqlite.connect(config.DB_PATH) as db:
-            await db.execute("""
-                UPDATE subscriptions SET is_active = 0
-                WHERE user_id = ? AND is_active = 1 AND chat_index = ?
-            """, (user_id, idx))
-            await db.commit()
-        label = config.get_channel_name(idx)
-
-    await call.answer(f"✅ Пользователь кикнут из: {label}", show_alert=True)
-    await show_user_info(call.message, user_id, bot, edit=True)
-
-
-@router.callback_query(F.data.startswith("admin_ban_user:"))
-async def cb_admin_ban_user(call: CallbackQuery, bot: Bot):
-    if not is_admin(call.from_user.id):
-        return
-    user_id = int(call.data.split(":")[1])
-
-    import aiosqlite as _aiosqlite
-    async with _aiosqlite.connect(config.DB_PATH) as dbc:
-        await dbc.execute(
-            "UPDATE users SET is_banned = 1 WHERE user_id = ?", (user_id,)
-        )
-        await dbc.commit()
-
-    await call.answer("🔴 Пользователь забанен в боте", show_alert=True)
-    await show_user_info(call.message, user_id, bot, edit=True)
-
-
-@router.callback_query(F.data.startswith("admin_unban_user:"))
-async def cb_admin_unban_user(call: CallbackQuery, bot: Bot):
-    if not is_admin(call.from_user.id):
-        return
-    user_id = int(call.data.split(":")[1])
-
-    import aiosqlite as _aiosqlite
-    async with _aiosqlite.connect(config.DB_PATH) as dbc:
-        await dbc.execute(
-            "UPDATE users SET is_banned = 0 WHERE user_id = ?", (user_id,)
-        )
-        await dbc.commit()
-
-    await call.answer("✅ Пользователь разбанен", show_alert=False)
-    await show_user_info(call.message, user_id, bot, edit=True)
 
 # ─── BROADCAST ─────────────────────────────────────────────────────────────────
 
@@ -835,7 +848,8 @@ async def handle_broadcast(message: Message, state: FSMContext, bot: Bot):
                 await status_msg.edit_text(f"📢 Отправлено: {sent}/{len(users)}")
             except Exception:
                 pass
-        __import__("asyncio").sleep(0.05)
+        import asyncio
+        await asyncio.sleep(0.05)
 
     await status_msg.edit_text(
         f"✅ Рассылка завершена!\n✅ Доставлено: {sent}\n❌ Ошибок: {failed}",
@@ -895,14 +909,6 @@ async def show_promo_card(target, promo_id: int, edit: bool = True):
             p = await cur.fetchone()
     if not p:
         return
-
-    bot_username = None
-    try:
-        from config import config as cfg
-        # Get bot username from config or cache
-        pass
-    except Exception:
-        pass
 
     disc = f"-{p['discount_pct']}%" if p["discount_pct"] else "100% (бесплатно)"
     uses = f"{p['uses_left']} ост." if p["uses_left"] != -1 else "∞"
@@ -1047,7 +1053,6 @@ async def promo_set_discount(message: Message, state: FSMContext):
     await state.update_data(disc_pct=pct)
     await state.set_state(PromoCreateState.tariff)
 
-    # Показать тарифы ВСЕХ чатов для привязки промокода
     import aiosqlite as _ai
     async with _ai.connect(config.DB_PATH) as dbc:
         dbc.row_factory = _ai.Row
@@ -1144,8 +1149,6 @@ async def promo_set_uses_per_user(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-
-# ─── TARIFF MANAGEMENT ─────────────────────────────────────────────────────────
 
 # ─── TARIFF MANAGEMENT ─────────────────────────────────────────────────────────
 
@@ -1266,8 +1269,6 @@ async def cb_tariff_toggle(call: CallbackQuery):
     await show_tariff_card(call.message, tariff_id, edit=True)
 
 
-# ── Редактирование полей ────────────────────────────────────────────────────────
-
 @router.callback_query(F.data.startswith("tariff_edit_menu:"))
 async def cb_tariff_edit_menu(call: CallbackQuery):
     if not is_admin(call.from_user.id):
@@ -1311,7 +1312,6 @@ async def handle_tariff_field_value(message: Message, state: FSMContext):
     value = message.text.strip()
     await state.set_state(None)
 
-    # Валидация числовых полей
     if field in ("days", "price"):
         try:
             value = int(value) if field == "days" else float(value)
@@ -1321,10 +1321,20 @@ async def handle_tariff_field_value(message: Message, state: FSMContext):
             return
 
     await db.update_tariff(tariff_id, **{field: value})
-    await message.answer(f"✅ Обновлено!")
+    await message.answer("✅ Обновлено!")
     await show_tariff_card(message, tariff_id, edit=False)
 
 
+def currency_choice_kb(callback_prefix: str) -> object:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🇷🇺 RUB", callback_data=f"{callback_prefix}:RUB"),
+        InlineKeyboardButton(text="🇪🇺 EUR", callback_data=f"{callback_prefix}:EUR"),
+        InlineKeyboardButton(text="🇺🇸 USD", callback_data=f"{callback_prefix}:USD"),
+    )
+    return builder.as_markup()
 
 
 @router.callback_query(F.data.startswith("tariff_edit_currency:"))
@@ -1348,7 +1358,6 @@ async def cb_tariff_set_currency(call: CallbackQuery):
     await call.answer(f"✅ Валюта: {currency}")
     await show_tariff_card(call.message, tariff_id, edit=True)
 
-# ── Удаление ────────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("tariff_delete_confirm:"))
 async def cb_tariff_delete_confirm(call: CallbackQuery):
@@ -1381,8 +1390,6 @@ async def cb_tariff_delete(call: CallbackQuery):
     await call.answer("🗑 Тариф удалён")
     await cb_admin_tariffs(call)
 
-
-# ── Добавление ──────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_add_tariff")
 async def cb_admin_add_tariff(call: CallbackQuery, state: FSMContext):
@@ -1428,18 +1435,6 @@ async def tariff_add_days(message: Message, state: FSMContext):
     await message.answer("Шаг 4/4: Цена (0 — бесплатно):")
 
 
-def currency_choice_kb(callback_prefix: str) -> object:
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🇷🇺 RUB", callback_data=f"{callback_prefix}:RUB"),
-        InlineKeyboardButton(text="🇪🇺 EUR", callback_data=f"{callback_prefix}:EUR"),
-        InlineKeyboardButton(text="🇺🇸 USD", callback_data=f"{callback_prefix}:USD"),
-    )
-    return builder.as_markup()
-
-
 @router.message(TariffAddState.price)
 async def tariff_add_price(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
@@ -1471,9 +1466,8 @@ async def tariff_add_currency(call: CallbackQuery, state: FSMContext):
         days=data["new_days"],
         price=data["new_price"]
     )
-    # Сохранить валюту
     await db.update_tariff(tariff_id, currency=currency)
-    await call.message.edit_text(f"✅ Тариф создан!")
+    await call.message.edit_text("✅ Тариф создан!")
     await show_tariff_card(call.message, tariff_id, edit=False)
 
 
