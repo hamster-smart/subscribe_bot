@@ -640,40 +640,114 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
 
 
 
+# ─── ВЫБОР КАНАЛА ДЛЯ ОТЗЫВА/КИКА ─────────────────────────────────────────────
+
+def channel_choice_kb(action: str, user_id: int):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    from config import config as cfg
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=cfg.get_channel_name(0),
+        callback_data=f"{action}:{user_id}:0"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=cfg.get_channel_name(1),
+        callback_data=f"{action}:{user_id}:1"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="Оба канала",
+        callback_data=f"{action}:{user_id}:all"
+    ))
+    builder.row(InlineKeyboardButton(
+        text="◀️ Назад",
+        callback_data=f"admin_user_info:{user_id}"
+    ))
+    return builder.as_markup()
+
+
 @router.callback_query(F.data.startswith("admin_revoke:"))
 async def cb_admin_revoke(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id):
         return
-    user_id = int(call.data.split(":")[1])
+    parts = call.data.split(":")
+    user_id = int(parts[1])
 
-    import aiosqlite as _aiosqlite
-    async with _aiosqlite.connect(config.DB_PATH) as dbc:
-        await dbc.execute(
-            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
-            (user_id,)
+    # Первый вызов — только user_id → показать выбор канала
+    if len(parts) == 2:
+        await call.message.edit_text(
+            "📺 Из какого канала отозвать подписку?",
+            reply_markup=channel_choice_kb("admin_revoke", user_id)
         )
-        await dbc.commit()
+        return
 
-    await call.answer("❌ Подписка отозвана", show_alert=True)
+    chat_index = parts[2]  # "0", "1" или "all"
+
+    import aiosqlite
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        if chat_index == "all":
+            await db.execute(
+                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            )
+        else:
+            await db.execute("""
+                UPDATE subscriptions SET is_active = 0
+                WHERE user_id = ? AND is_active = 1 AND chat_index = ?
+            """, (user_id, int(chat_index)))
+        await db.commit()
+
+    if chat_index == "all":
+        label = "всех каналов"
+    else:
+        label = config.get_channel_name(int(chat_index))
+
+    await call.answer(f"✅ Подписка отозвана из: {label}", show_alert=True)
     await show_user_info(call.message, user_id, bot, edit=True)
+
 
 @router.callback_query(F.data.startswith("admin_kick_user:"))
 async def cb_admin_kick_user(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id):
         return
-    user_id = int(call.data.split(":")[1])
-    await kick_user(bot, user_id)
-    # Деактивировать подписку
-    import aiosqlite as _aiosqlite
-    async with _aiosqlite.connect(config.DB_PATH) as dbc:
-        await dbc.execute(
-            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
-            (user_id,)
-        )
-        await dbc.commit()
-    await call.answer("🚫 Пользователь кикнут", show_alert=True)
-    await show_user_info(call.message, user_id, bot, edit=True)
+    parts = call.data.split(":")
+    user_id = int(parts[1])
 
+    # Первый вызов — только user_id → показать выбор канала
+    if len(parts) == 2:
+        await call.message.edit_text(
+            "📺 Из какого канала кикнуть пользователя?",
+            reply_markup=channel_choice_kb("admin_kick_user", user_id)
+        )
+        return
+
+    chat_index = parts[2]  # "0", "1" или "all"
+
+    if chat_index == "all":
+        await kick_user(bot, user_id, 0)
+        await kick_user(bot, user_id, 1)
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as db:
+            await db.execute(
+                "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+                (user_id,)
+            )
+            await db.commit()
+        label = "всех каналов"
+    else:
+        idx = int(chat_index)
+        await kick_user(bot, user_id, idx)
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as db:
+            await db.execute("""
+                UPDATE subscriptions SET is_active = 0
+                WHERE user_id = ? AND is_active = 1 AND chat_index = ?
+            """, (user_id, idx))
+            await db.commit()
+        label = config.get_channel_name(idx)
+
+    await call.answer(f"✅ Пользователь кикнут из: {label}", show_alert=True)
+    await show_user_info(call.message, user_id, bot, edit=True)
 
 
 @router.callback_query(F.data.startswith("admin_ban_user:"))
