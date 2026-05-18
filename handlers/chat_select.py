@@ -108,12 +108,13 @@ async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
         await call.answer("Тарифы временно недоступны", show_alert=True)
         return
 
-    used_trial = await db.has_used_trial(call.from_user.id)
+    # ✅ Передаём chat_index — пробный проверяется отдельно для каждого чата
+    used_trial = await db.has_used_trial(call.from_user.id, chat_index)
     builder = InlineKeyboardBuilder()
     for t in chat_tariffs:
         if t["is_trial"]:
             if used_trial:
-                continue  # скрыть пробный если уже использован
+                continue  # скрыть пробный если уже использован для этого чата
             label = f"{t['name']} — Бесплатно"
         else:
             label = f"{t['name']} — {t['price']:.0f} {t['currency'] or 'RUB'}"
@@ -162,7 +163,8 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
 
     # ── ПРОБНЫЙ ТАРИФ — сразу выдать доступ ──────────────────────────────────
     if tariff["is_trial"]:
-        used = await db.has_used_trial(call.from_user.id)
+        # ✅ Передаём chat_index — пробный проверяется отдельно для каждого чата
+        used = await db.has_used_trial(call.from_user.id, chat_index)
         if used:
             await call.answer(
                 "❌ Пробный тариф можно использовать только один раз.",
