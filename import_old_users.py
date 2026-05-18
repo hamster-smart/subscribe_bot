@@ -25,9 +25,9 @@ IMPORT_TARIFF_ID = 99
 async def ensure_import_tariff(db):
     """Создать специальный тариф 'Импорт' если его нет."""
     await db.execute("""
-        INSERT OR IGNORE INTO tariffs (id, name, description, days, price, sort_order, is_trial)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (IMPORT_TARIFF_ID, "📦 Импорт (старый бот)", "Перенесено из старого бота", 30, 0, 99, 0))
+        INSERT OR IGNORE INTO tariffs (id, name, description, days, price, sort_order, is_trial, chat_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (IMPORT_TARIFF_ID, "📦 Импорт (старый бот)", "Перенесено из старого бота", 30, 0, 99, 0, 0))
     await db.commit()
 
 
@@ -100,7 +100,7 @@ async def import_users(xlsx_path: str):
                 SELECT s.id FROM subscriptions s
                 JOIN tariffs t ON t.id = s.tariff_id
                 WHERE s.user_id = ? AND s.is_active = 1
-                  AND (t.chat_index = 0 OR t.id = 99)
+                  AND (s.chat_index = 0 OR t.id = 99)
             """, (user_id,)) as cur:
                 existing = await cur.fetchone()
 
@@ -110,15 +110,12 @@ async def import_users(xlsx_path: str):
                 continue
 
             if expires_at and expires_at > now:
-                # Активная подписка
                 is_active = 1
                 status = "✅ активна"
             elif expires_at:
-                # Истекшая — импортируем но неактивной
                 is_active = 0
                 status = "❌ истекла"
             else:
-                # Нет данных о подписке
                 is_active = 0
                 starts_at = now
                 expires_at = now
@@ -126,14 +123,15 @@ async def import_users(xlsx_path: str):
 
             await db.execute("""
                 INSERT INTO subscriptions
-                    (user_id, tariff_id, starts_at, expires_at, is_active)
-                VALUES (?, ?, ?, ?, ?)
+                    (user_id, tariff_id, starts_at, expires_at, is_active, chat_index)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
                 IMPORT_TARIFF_ID,
                 (starts_at or now).isoformat(),
                 (expires_at or now).isoformat(),
-                is_active
+                is_active,
+                0
             ))
 
             imported += 1
