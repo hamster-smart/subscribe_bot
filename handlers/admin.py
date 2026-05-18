@@ -160,7 +160,7 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
 
     await db.confirm_payment(payment_id, call.from_user.id)
     tariff = await db.get_tariff(payment["tariff_id"])
-        chat_index = payment["chat_index"] if payment["chat_index"] is not None else 0
+    chat_index = payment["chat_index"] if payment["chat_index"] is not None else 0
     await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"], chat_index)
 
     # Снять мьют если был (пробный → платный)
