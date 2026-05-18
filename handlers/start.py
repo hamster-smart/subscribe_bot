@@ -29,7 +29,7 @@ async def cmd_start(message: Message, state: FSMContext):
             if user_uses >= max_per_user:
                 support = await db.get_setting("support_enabled", "1")
                 await message.answer(
-                    f"❌ Промокод <b>{promo_code}</b> уже использован тобой.",
+                    f"❌ Промокод <b>{promo_code}</b> уже использован.",
                     parse_mode="HTML",
                     reply_markup=main_menu_kb(support == "1")
                 )
@@ -95,7 +95,7 @@ async def cmd_start(message: Message, state: FSMContext):
                             f"🎟 Промокод <b>{promo_code}</b>{disc_text}\n\n"
                             f"📦 {tariff['name']} → {chat_name}\n"
                             f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
-                            f"Выбери способ оплаты:",
+                            f"Выберите способ оплаты:",
                             reply_markup=payment_methods_kb(tariff["id"], chat_index, currencies[0], currency_methods),
                             parse_mode="HTML"
                         )
@@ -104,7 +104,7 @@ async def cmd_start(message: Message, state: FSMContext):
                             f"🎟 Промокод <b>{promo_code}</b>{disc_text}\n\n"
                             f"📦 {tariff['name']} → {chat_name}\n"
                             f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
-                            f"Выбери валюту оплаты:",
+                            f"Выберите валюту оплаты:",
                             reply_markup=currency_kb(tariff["id"], chat_index, currencies),
                             parse_mode="HTML"
                         )
@@ -116,7 +116,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 parse_mode="HTML"
             )
 
-    welcome = await db.get_setting("welcome_text", "👋 Привет! Выбери тариф и получи доступ к каналу.")
+    welcome = await db.get_setting("welcome_text", "👋 Приветствуем! Выберите тариф и получите доступ к чату.")
     support = await db.get_setting("support_enabled", "1")
 
     from datetime import datetime
@@ -134,7 +134,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "main_menu")
 async def cb_main_menu(call: CallbackQuery):
-    welcome = await db.get_setting("welcome_text", "👋 Выбери тариф и получи доступ к каналу.")
+    welcome = await db.get_setting("welcome_text", "👋 Выберите тариф и получите доступ к чату.")
     support = await db.get_setting("support_enabled", "1")
 
     from datetime import datetime
@@ -167,9 +167,9 @@ async def cb_my_subscription(call: CallbackQuery):
             )
 
     if lines:
-        text = "👤 <b>Твои подписки</b>\n\n" + "\n\n".join(lines)
+        text = "👤 <b>Ваши подписки</b>\n\n" + "\n\n".join(lines)
     else:
-        text = "❌ У тебя нет активных подписок.\nВыбери тариф, чтобы получить доступ!"
+        text = "❌ У Вас нет активных подписок.\nВыберите тариф, чтобы получить доступ!"
     await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="HTML")
 
 
@@ -184,8 +184,8 @@ async def cb_support(call: CallbackQuery, state: FSMContext):
     await state.set_state(SupportState.waiting_message)
     await call.message.edit_text(
         "📞 <b>Поддержка</b>\n\n"
-        "Опиши свой вопрос — мы ответим в ближайшее время.\n\n"
-        "Отправь сообщение (текст или фото):",
+        "Опишите свой вопрос — мы ответим в ближайшее время.\n\n"
+        "Отправьте сообщение (текст или фото):",
         reply_markup=back_kb("main_menu"),
         parse_mode="HTML"
     )
