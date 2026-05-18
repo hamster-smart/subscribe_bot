@@ -70,7 +70,7 @@ async def cmd_start(message: Message, state: FSMContext):
                             promo_code=promo_code
                         )
                         await db.confirm_payment(payment_id, admin_id=0)
-                        await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"])
+                        await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"], chat_index)
                         # Помечаем использованным только после успешной активации
                         await db.use_promo(promo_code)
 
@@ -121,6 +121,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 f"🎟 Промокод <b>{promo_code}</b> активирован! Скидка применится при выборе тарифа.",
                 parse_mode="HTML"
             )
+            return
 
     welcome = await db.get_setting("welcome_text", "👋 Приветствуем! Выберите тариф и получите доступ к чату.")
     support = await db.get_setting("support_enabled", "1")
