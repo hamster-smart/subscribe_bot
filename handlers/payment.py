@@ -19,7 +19,6 @@ class PaymentState(StatesGroup):
 # ─── ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: выдача доступа по 100% промокоду ────────────────
 
 async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dict):
-    """Вызывается когда final_price == 0 — выдаём доступ без оплаты."""
     data = await state.get_data()
     promo_code = data.get("promo_code")
     chat_index = data.get("chat_index", 0)
@@ -29,12 +28,17 @@ async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dic
         tariff_id=tariff["id"],
         amount=0,
         method="promo_100",
-        promo_code=promo_code
+        promo_code=promo_code,
+        chat_index=chat_index   # ← добавить
     )
     await db.confirm_payment(payment_id, admin_id=0)
-    await db.create_subscription(call.from_user.id, tariff["id"], tariff["days"])
+    await db.create_subscription(
+        call.from_user.id,
+        tariff["id"],
+        tariff["days"],
+        chat_index   # ← добавить
+    )
 
-    # Помечаем промокод использованным только после успешной активации
     if promo_code:
         await db.use_promo(promo_code)
 
