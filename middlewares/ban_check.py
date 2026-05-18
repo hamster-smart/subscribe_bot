@@ -3,6 +3,7 @@ from aiogram.types import TelegramObject, Message, CallbackQuery
 from typing import Callable, Awaitable, Any
 
 import database as db
+from config import config
 
 
 class BanCheckMiddleware(BaseMiddleware):
@@ -14,7 +15,6 @@ class BanCheckMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict,
     ) -> Any:
-        # Определить user_id из апдейта
         user_id = None
         if isinstance(event, Message):
             user_id = event.from_user.id if event.from_user else None
@@ -22,9 +22,10 @@ class BanCheckMiddleware(BaseMiddleware):
             user_id = event.from_user.id if event.from_user else None
 
         if user_id:
-            user = await db.get_user(user_id)
-            if user and user["is_banned"]:
-                # Молча игнорируем — не отвечаем забаненным
-                return
+            # Админов никогда не блокируем
+            if user_id not in config.ADMIN_IDS:
+                user = await db.get_user(user_id)
+                if user and user["is_banned"]:
+                    return
 
         return await handler(event, data)
