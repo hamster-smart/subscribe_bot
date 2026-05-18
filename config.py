@@ -36,6 +36,9 @@ class Config(BaseSettings):
     DEFAULT_EXPIRE_ACTION: str = "kick"
     REMINDER_DAYS: list[int] = [3, 1]
 
+    # ─── SUPPORT ───────────────────────────────────────────────
+    SUPPORT_CHAT_ID: Optional[int] = None
+
     # ─── BOT MESSAGES ──────────────────────────────────────
     WELCOME_TEXT: str = (
         "👋 Привет! Это бот подписки на закрытые каналы.\n\n"
