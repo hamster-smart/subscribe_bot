@@ -29,14 +29,14 @@ async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dic
         amount=0,
         method="promo_100",
         promo_code=promo_code,
-        chat_index=chat_index   # ← добавить
+        chat_index=chat_index
     )
     await db.confirm_payment(payment_id, admin_id=0)
     await db.create_subscription(
         call.from_user.id,
         tariff["id"],
         tariff["days"],
-        chat_index   # ← добавить
+        chat_index
     )
 
     if promo_code:
@@ -63,6 +63,9 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
     tariff = await db.get_tariff(tariff_id)
     data = await state.get_data()
     promo_code = data.get("promo_code")
+    chat_index = data.get("chat_index", tariff.get("chat_index", 0) if tariff else 0)
+    if chat_index is None:
+        chat_index = 0
     final_price = data.get("final_price", tariff["price"])
 
     # При 100% скидке — сразу выдаём доступ, без оплаты
@@ -75,13 +78,14 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
         tariff_id=tariff_id,
         amount=final_price,
         method="manual",
-        promo_code=promo_code
+        promo_code=promo_code,
+        chat_index=chat_index
     )
     # Помечаем промокод использованным после создания платежа
     if promo_code:
         await db.use_promo(promo_code)
 
-    # Реквизиты хранятся в БД, config.MANUAL_PAYMENT_DETAILS не используем
+    # Реквизиты хранятся в БД
     payment_details = await db.get_setting("payment_details", "Реквизиты не настроены — обратитесь к администратору.")
 
     text = (
@@ -172,6 +176,9 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
     tariff = await db.get_tariff(tariff_id)
     data = await state.get_data()
     promo_code = data.get("promo_code")
+    chat_index = data.get("chat_index", tariff.get("chat_index", 0) if tariff else 0)
+    if chat_index is None:
+        chat_index = 0
     final_price = data.get("final_price", tariff["price"])
 
     # При 100% скидке — сразу выдаём доступ, без оплаты
@@ -180,9 +187,9 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
         return
 
     if config.YUKASSA_ENABLED:
-        await _pay_yukassa(call, tariff, final_price, promo_code, state)
+        await _pay_yukassa(call, tariff, final_price, promo_code, chat_index, state)
     elif config.TINKOFF_ENABLED:
-        await _pay_tinkoff(call, tariff, final_price, promo_code, state)
+        await _pay_tinkoff(call, tariff, final_price, promo_code, chat_index, state)
     else:
         await call.answer(
             "Онлайн-оплата временно недоступна. Используйте ручной перевод.",
@@ -191,7 +198,7 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
 
 
 async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
-                       promo_code: str | None, state: FSMContext):
+                       promo_code: str | None, chat_index: int, state: FSMContext):
     """Создать платёж в ЮКассе и вернуть ссылку пользователю."""
     try:
         from yookassa import Configuration, Payment
@@ -205,7 +212,8 @@ async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
             tariff_id=tariff["id"],
             amount=amount,
             method="yukassa",
-            promo_code=promo_code
+            promo_code=promo_code,
+            chat_index=chat_index
         )
         if promo_code:
             await db.use_promo(promo_code)
@@ -250,7 +258,7 @@ async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
 
 
 async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
-                       promo_code: str | None, state: FSMContext):
+                       promo_code: str | None, chat_index: int, state: FSMContext):
     """Создать платёж в Тинькофф и вернуть ссылку пользователю."""
     try:
         import hashlib
@@ -261,7 +269,8 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
             tariff_id=tariff["id"],
             amount=amount,
             method="tinkoff",
-            promo_code=promo_code
+            promo_code=promo_code,
+            chat_index=chat_index
         )
         if promo_code:
             await db.use_promo(promo_code)
@@ -325,7 +334,6 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
 
     await db.confirm_payment(payment_db_id, admin_id=0)
     tariff = await db.get_tariff(payment["tariff_id"])
-    await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"])
 
     # chat_index: из платежа → из тарифа → 0
     chat_index = payment.get("chat_index")
@@ -333,6 +341,8 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
         chat_index = tariff.get("chat_index", 0)
     if chat_index is None:
         chat_index = 0
+
+    await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"], chat_index)
 
     link = await grant_access(bot, payment["user_id"], chat_index)
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
