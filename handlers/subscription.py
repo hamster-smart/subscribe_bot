@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from config import config
 
 import database as db
 from keyboards.inline import tariffs_kb, tariff_detail_kb, back_kb
@@ -79,23 +80,118 @@ from aiogram.types import Message
 async def handle_promo_input(message: Message, state: FSMContext):
     code = message.text.strip().upper()
     promo = await db.get_promo(code)
-    if promo:
-        await state.update_data(promo_code=code)
-        discount_str = (
-            f"-{promo['discount_pct']}%" if promo["discount_pct"]
-            else f"-{promo['discount_rub']:.0f}₽"
-        )
-        await message.answer(
-            f"✅ Промокод <b>{code}</b> принят! Скидка: <b>{discount_str}</b>\n\n"
-            f"Теперь выберите тариф:",
-            reply_markup=tariffs_kb(await db.get_tariffs()),
-            parse_mode="HTML"
-        )
-    else:
+    if not promo:
         await message.answer(
             "❌ Промокод недействителен или уже использован.",
             reply_markup=back_kb()
         )
+        await state.set_state(None)
+        return
+
+    user_uses = await db.get_user_promo_uses(message.from_user.id, code)
+    max_per_user = promo["max_uses_per_user"] if promo["max_uses_per_user"] else 1
+    if user_uses >= max_per_user:
+        await message.answer(
+            f"❌ Промокод <b>{code}</b> уже использован.",
+            parse_mode="HTML",
+            reply_markup=back_kb()
+        )
+        await state.set_state(None)
+        return
+
+    await state.update_data(promo_code=code)
+
+    # Промокод привязан к тарифу — сразу к нему, без выбора
+    if promo["tariff_id"]:
+        tariff = await db.get_tariff(promo["tariff_id"])
+        if tariff:
+            chat_index = promo["chat_index"]
+            if chat_index is None:
+                chat_index = tariff["chat_index"] if tariff["chat_index"] is not None else 0
+
+            price = tariff["price"]
+            if promo["discount_pct"]:
+                price = price * (1 - promo["discount_pct"] / 100)
+            elif promo["discount_rub"]:
+                price = max(0, price - promo["discount_rub"])
+
+            await state.update_data(
+                selected_tariff_id=tariff["id"],
+                chat_index=chat_index,
+                final_price=price
+            )
+
+            chat_name = config.get_channel_name(chat_index)
+            disc_text = f" (-{promo['discount_pct']}%)" if promo["discount_pct"] else " (бесплатно)" if price == 0 else ""
+
+            if price == 0:
+                # 100% скидка — выдаём доступ сразу
+                payment_id = await db.create_payment(
+                    user_id=message.from_user.id,
+                    tariff_id=tariff["id"],
+                    amount=0,
+                    method="promo_100",
+                    promo_code=code,
+                    chat_index=chat_index
+                )
+                await db.confirm_payment(payment_id, admin_id=0)
+                await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"], chat_index)
+                await db.use_promo(code)
+
+                from services.channel import grant_access
+                from datetime import datetime, timedelta
+                link = await grant_access(message.bot, message.from_user.id, chat_index)
+                expires = datetime.utcnow() + timedelta(days=tariff["days"])
+
+                await message.answer(
+                    f"🎟 Промокод <b>{code}</b> активирован!{disc_text}\n\n"
+                    f"✅ <b>Доступ выдан!</b>\n"
+                    f"📺 Канал: {chat_name}\n"
+                    f"🔗 Ссылка: {link}\n"
+                    f"📅 До: {expires.strftime('%d.%m.%Y')}",
+                    parse_mode="HTML"
+                )
+                await state.clear()
+                return
+
+            # Частичная скидка — к методам оплаты
+            from handlers.chat_select import currency_kb, payment_methods_kb
+            methods = await db.get_payment_methods()
+            currencies = list(dict.fromkeys(m["currency"] for m in methods))
+
+            if len(currencies) == 1:
+                currency_methods = await db.get_payment_methods(currencies[0])
+                await message.answer(
+                    f"🎟 Промокод <b>{code}</b>{disc_text}\n\n"
+                    f"📦 {tariff['name']} → {chat_name}\n"
+                    f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
+                    f"Выберите способ оплаты:",
+                    reply_markup=payment_methods_kb(tariff["id"], chat_index, currencies[0], currency_methods),
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer(
+                    f"🎟 Промокод <b>{code}</b>{disc_text}\n\n"
+                    f"📦 {tariff['name']} → {chat_name}\n"
+                    f"💰 {price:.0f} {tariff['currency'] or 'RUB'}\n\n"
+                    f"Выберите валюту оплаты:",
+                    reply_markup=currency_kb(tariff["id"], chat_index, currencies),
+                    parse_mode="HTML"
+                )
+            await state.set_state(None)
+            return
+
+    # Промокод без привязки к тарифу — показать все тарифы
+    discount_str = (
+        f"-{promo['discount_pct']}%" if promo["discount_pct"]
+        else f"-{promo['discount_rub']:.0f}₽"
+    )
+    await message.answer(
+        f"✅ Промокод <b>{code}</b> принят! Скидка: <b>{discount_str}</b>\n\n"
+        f"Теперь выберите тариф:",
+        reply_markup=tariffs_kb(await db.get_tariffs()),
+        parse_mode="HTML"
+    )
     await state.set_state(None)
 
 
