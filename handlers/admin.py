@@ -160,8 +160,8 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
 
     await db.confirm_payment(payment_id, call.from_user.id)
     tariff = await db.get_tariff(payment["tariff_id"])
-    chat_index = payment["chat_index"] if "chat_index" in payment.keys() else 0
-    await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"])
+        chat_index = payment["chat_index"] if payment["chat_index"] is not None else 0
+    await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"], chat_index)
 
     # Снять мьют если был (пробный → платный)
     from services.channel import unmute_user
@@ -545,7 +545,7 @@ async def cb_admin_grant_tariff(call: CallbackQuery, bot: Bot):
     tariff = await db.get_tariff(tariff_id)
     chat_index = tariff["chat_index"] or 0
 
-    await db.create_subscription(user_id, tariff_id, tariff["days"])
+    await db.create_subscription(user_id, tariff_id, tariff["days"], chat_index)
 
     # Выдать invite-ссылку
     from services.channel import grant_access
@@ -616,7 +616,7 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
     tariff_id = base_tariff["id"] if base_tariff else 2
     chat_index = base_tariff["chat_index"] or 0 if base_tariff else 0
 
-    await db.create_subscription(user_id, tariff_id, days)
+    await db.create_subscription(user_id, tariff_id, days, chat_index)
 
     from services.channel import grant_access
     link = await grant_access(bot, user_id, chat_index)
