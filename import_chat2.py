@@ -82,9 +82,8 @@ async def import_users(xlsx_path: str):
             # Проверить — есть ли уже подписка на чат 2
             async with db.execute("""
                 SELECT s.id FROM subscriptions s
-                JOIN tariffs t ON t.id = s.tariff_id
                 WHERE s.user_id = ? AND s.is_active = 1
-                  AND (t.chat_index = 1 OR t.id = ?)
+                  AND (s.chat_index = 1 OR s.tariff_id = ?)
             """, (user_id, IMPORT_TARIFF_ID)) as cur:
                 existing = await cur.fetchone()
 
@@ -107,14 +106,15 @@ async def import_users(xlsx_path: str):
 
             await db.execute("""
                 INSERT INTO subscriptions
-                    (user_id, tariff_id, starts_at, expires_at, is_active)
-                VALUES (?, ?, ?, ?, ?)
+                    (user_id, tariff_id, starts_at, expires_at, is_active, chat_index)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
                 IMPORT_TARIFF_ID,
                 (starts_at or now).isoformat(),
                 (expires_at or now).isoformat(),
-                is_active
+                is_active,
+                CHAT_INDEX
             ))
 
             imported += 1
