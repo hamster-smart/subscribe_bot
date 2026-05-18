@@ -30,7 +30,7 @@ router = Router()
 # ─── FSM ─────────────────────────────────────────────────────────────────────
 
 class SupportState(StatesGroup):
-    in_dialog  = State()   # пользователь пишет в поддержку
+    waiting_message = State()   # пользователь пишет в поддержку
     wait_reply = State()   # админ вводит ответ
 
 
@@ -75,7 +75,7 @@ async def cb_support_enter(call: CallbackQuery, state: FSMContext):
         await call.answer("🚫 Вы не можете обращаться в поддержку.", show_alert=True)
         return
 
-    await state.set_state(SupportState.in_dialog)
+    await state.set_state(SupportState.waiting_message)
     await call.message.edit_text(
         "💬 <b>Поддержка</b>\n\n"
         "Напишите ваш вопрос — мы ответим в ближайшее время.\n\n"
@@ -94,7 +94,7 @@ async def cmd_support(message: Message, state: FSMContext):
         await message.answer("🚫 Вы не можете обращаться в поддержку.")
         return
 
-    await state.set_state(SupportState.in_dialog)
+    await state.set_state(SupportState.waiting_message)
     await message.answer(
         "💬 <b>Поддержка</b>\n\n"
         "Напишите ваш вопрос — мы ответим в ближайшее время.\n\n"
@@ -118,7 +118,7 @@ async def cb_support_exit(call: CallbackQuery, state: FSMContext):
 
 # ─── СООБЩЕНИЕ ОТ ПОЛЬЗОВАТЕЛЯ → ПЕРЕСЫЛКА АДМИНУ ──────────────────────────
 
-@router.message(SupportState.in_dialog)
+@router.message(SupportState.waiting_message)
 async def user_message_to_support(message: Message, state: FSMContext, bot: Bot):
     """Любое сообщение пользователя в режиме поддержки — пересылаем админу."""
     user_id = message.from_user.id
