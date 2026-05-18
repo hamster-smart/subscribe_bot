@@ -54,28 +54,42 @@ async def cmd_start(message: Message, state: FSMContext):
                     disc_text = f" (-{promo['discount_pct']}%)" if promo["discount_pct"] else " (бесплатно)" if price == 0 else ""
                     chat_name = config.get_channel_name(chat_index)
 
-                    # Показать методы оплаты
-                    methods = await db.get_payment_methods()
-                    currencies = list(dict.fromkeys(m["currency"] for m in methods))
-
-                    from handlers.chat_select import currency_kb, payment_methods_kb
                     if price == 0:
-                        # Бесплатный промокод — сразу выдать доступ
+                        # 100% скидка — создаём запись, выдаём доступ, сжигаем промокод
+                        payment_id = await db.create_payment(
+                            user_id=message.from_user.id,
+                            tariff_id=tariff["id"],
+                            amount=0,
+                            method="promo_100",
+                            promo_code=promo_code
+                        )
+                        await db.confirm_payment(payment_id, admin_id=0)
                         await db.create_subscription(message.from_user.id, tariff["id"], tariff["days"])
+                        # Помечаем использованным только после успешной активации
+                        await db.use_promo(promo_code)
+
                         from services.channel import grant_access
                         from datetime import datetime, timedelta
                         link = await grant_access(message.bot, message.from_user.id, chat_index)
                         expires = datetime.utcnow() + timedelta(days=tariff["days"])
+
                         await message.answer(
-                            f"🎟 Промокод <b>{promo_code}</b> активирован!{disc_text}\n\n"
+                            f"🎟 Промокод <b>{promo_code}</b> активирован! (бесплатный доступ)\n\n"
                             f"✅ <b>Доступ выдан!</b>\n"
                             f"📺 Канал: {chat_name}\n"
                             f"🔗 Ссылка: {link}\n"
                             f"📅 До: {expires.strftime('%d.%m.%Y')}",
                             parse_mode="HTML"
                         )
+                        await state.clear()
                         return
-                    elif len(currencies) == 1:
+
+                    # Частичная скидка — показываем методы оплаты
+                    methods = await db.get_payment_methods()
+                    currencies = list(dict.fromkeys(m["currency"] for m in methods))
+
+                    from handlers.chat_select import currency_kb, payment_methods_kb
+                    if len(currencies) == 1:
                         currency_methods = await db.get_payment_methods(currencies[0])
                         await message.answer(
                             f"🎟 Промокод <b>{promo_code}</b>{disc_text}\n\n"
@@ -166,8 +180,6 @@ async def cb_support(call: CallbackQuery, state: FSMContext):
         await call.answer("Поддержка временно недоступна.", show_alert=True)
         return
 
-    from aiogram.fsm.state import State, StatesGroup
-    # Редиректим в support handler
     from handlers.support import SupportState
     await state.set_state(SupportState.waiting_message)
     await call.message.edit_text(
