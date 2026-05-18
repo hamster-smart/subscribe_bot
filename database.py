@@ -447,20 +447,19 @@ async def set_setting(key: str, value: str):
         await db.commit()
 
 
-
-
-async def has_used_trial(user_id: int) -> bool:
-    """Проверить, использовал ли юзер пробный тариф хоть раз."""
+async def has_used_trial(user_id: int, chat_index: int = 0) -> bool:
+    """Проверить, использовал ли юзер пробный тариф для конкретного чата."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("""
             SELECT COUNT(*) as c
             FROM subscriptions s
             JOIN tariffs t ON t.id = s.tariff_id
-            WHERE s.user_id = ? AND t.is_trial = 1
-        """, (user_id,)) as cur:
+            WHERE s.user_id = ? AND t.is_trial = 1 AND s.chat_index = ?
+        """, (user_id, chat_index)) as cur:
             row = await cur.fetchone()
             return row["c"] > 0
+
 
 # ─── STATS ─────────────────────────────────────────────────────────────────────
 
