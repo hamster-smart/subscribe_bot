@@ -58,16 +58,18 @@ async def cb_admin_stats(call: CallbackQuery):
         )).fetchone())["c"]
         # выручка по валютам — всего
         async with dbc.execute(
-            "SELECT COALESCE(currency,'RUB') as cur, COALESCE(SUM(amount),0) as s "
-            "FROM payments WHERE status='confirmed' "
-            "GROUP BY COALESCE(currency,'RUB') ORDER BY cur"
+            "SELECT COALESCE(p.currency, pm.currency, 'RUB') as cur, COALESCE(SUM(p.amount),0) as s "
+            "FROM payments p LEFT JOIN payment_methods pm ON p.payment_method_id=pm.id "
+            "WHERE p.status='confirmed' "
+            "GROUP BY COALESCE(p.currency, pm.currency, 'RUB') ORDER BY cur"
         ) as _cur:
             revenue_rows = await _cur.fetchall()
         # выручка по валютам — сегодня
         async with dbc.execute(
-            "SELECT COALESCE(currency,'RUB') as cur, COALESCE(SUM(amount),0) as s "
-            "FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now') "
-            "GROUP BY COALESCE(currency,'RUB') ORDER BY cur"
+            "SELECT COALESCE(p.currency, pm.currency, 'RUB') as cur, COALESCE(SUM(p.amount),0) as s "
+            "FROM payments p LEFT JOIN payment_methods pm ON p.payment_method_id=pm.id "
+            "WHERE p.status='confirmed' AND date(p.confirmed_at)=date('now') "
+            "GROUP BY COALESCE(p.currency, pm.currency, 'RUB') ORDER BY cur"
         ) as _cur2:
             today_rows = await _cur2.fetchall()
         chat_stats = []
@@ -337,9 +339,10 @@ async def handle_user_lookup(message: Message, state: FSMContext, bot: Bot):
     if len(users) > 1:
         builder = InlineKeyboardBuilder()
         for u in users:
-            label = f"{u['full_name'] or u['username'] or 'id' + str(u['user_id'])}"
-            builder.row(InlineKeyboardButton(text=label[:60], callback_data=f"admin_user_info:{u['user_id']}"))
-        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="admin_menu"))
+            uname_str = f" @{u['username']}" if u['username'] else ''
+            banned = ' 🚫' if u['is_banned'] else ''
+            label = f"{u['full_name'] or '—'}{uname_str}{banned} [{u['user_id']}]"
+            builder.row(InlineKeyboardButton(text=label[:80], callback_data=f"admin_user_info:{u['user_id']}"))
         await message.answer(f"Найдено {len(users)} пользователей:", reply_markup=builder.as_markup())
         return
     await show_user_info(message, users[0]["user_id"], bot)
