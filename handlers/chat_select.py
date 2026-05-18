@@ -272,7 +272,8 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
         amount=final_price,
         method=f"manual_{method['name']}",
         promo_code=promo_code,
-        chat_index=chat_index
+        chat_index=chat_index,
+        currency=currency
     )
     if promo_code:
         await db.use_promo(promo_code)
