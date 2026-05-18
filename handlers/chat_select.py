@@ -170,7 +170,7 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
             )
             return
         # Создать бесплатную подписку
-        await db.create_subscription(call.from_user.id, tariff_id, tariff["days"])
+        await db.create_subscription(call.from_user.id, tariff_id, tariff["days"], chat_index)
         from datetime import datetime, timedelta
         expires = datetime.utcnow() + timedelta(days=tariff["days"])
         chat_name = config.get_channel_name(chat_index)
