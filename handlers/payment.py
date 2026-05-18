@@ -86,7 +86,7 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
         f"💰 Сумма: <b>{final_price:.0f} ₽</b>\n\n"
         f"<b>Реквизиты для перевода:</b>\n"
         f"{payment_details}\n\n"
-        f"После оплаты нажми кнопку ниже и отправь скриншот."
+        f"После оплаты нажмите кнопку ниже и отправьте квитанцию/скриншот."
     )
     await state.update_data(current_payment_id=payment_id)
     await call.message.edit_text(text, reply_markup=manual_payment_kb(payment_id), parse_mode="HTML")
@@ -98,7 +98,7 @@ async def cb_send_screenshot(call: CallbackQuery, state: FSMContext):
     await state.update_data(current_payment_id=payment_id)
     await state.set_state(PaymentState.waiting_screenshot)
     await call.message.edit_text(
-        "📷 Пришли скриншот оплаты (фото):",
+        "📷 Пришлите квитанцию/скриншот оплаты (фото):",
         reply_markup=back_kb("main_menu")
     )
 
