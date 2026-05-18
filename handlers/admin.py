@@ -743,7 +743,7 @@ async def show_promo_list(target, edit: bool = True):
     import aiosqlite as aiosqlite
     async with aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = aiosqlite.Row
-        async with dbc.execute("SELECT * FROM promocodes ORDER BY created_at DESC LIMIT 20") as cur:
+        async with dbc.execute("SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 20") as cur:
             promos = await cur.fetchall()
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -771,7 +771,7 @@ async def show_promo_card(target, promo_id: int, edit: bool = True):
     import aiosqlite as aiosqlite
     async with aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = aiosqlite.Row
-        async with dbc.execute("SELECT * FROM promocodes WHERE id=?", (promo_id,)) as cur:
+        async with dbc.execute("SELECT * FROM promo_codes WHERE id=?", (promo_id,)) as cur:
             p = await cur.fetchone()
     if not p:
         return
@@ -829,7 +829,7 @@ async def cb_promo_toggle(call: CallbackQuery):
     import aiosqlite as aiosqlite
     async with aiosqlite.connect(config.DB_PATH) as dbc:
         await dbc.execute(
-            "UPDATE promocodes SET is_active=CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
+            "UPDATE promo_codes SET is_active=CASE WHEN is_active=1 THEN 0 ELSE 1 END WHERE id=?",
             (promo_id,)
         )
         await dbc.commit()
@@ -858,7 +858,7 @@ async def cb_promo_delete(call: CallbackQuery):
     promo_id = int(call.data.split(":")[1])
     import aiosqlite as aiosqlite
     async with aiosqlite.connect(config.DB_PATH) as dbc:
-        await dbc.execute("DELETE FROM promocodes WHERE id=?", (promo_id,))
+        await dbc.execute("DELETE FROM promo_codes WHERE id=?", (promo_id,))
         await dbc.commit()
     await call.answer("🗑 Удалён")
     await show_promo_list(call.message, edit=True)
