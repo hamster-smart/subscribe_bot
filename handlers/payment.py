@@ -125,11 +125,18 @@ async def handle_screenshot(message: Message, state: FSMContext, bot: Bot):
     tariff = await db.get_tariff(payment["tariff_id"])
     user = message.from_user
 
+    # chat_index: из платежа → из тарифа → 0
+    chat_index = payment.get("chat_index")
+    if chat_index is None:
+        chat_index = tariff.get("chat_index", 0)
+    chat_name = config.get_channel_name(chat_index)
+
     admin_text = (
         f"💰 <b>Новая оплата #{payment_id}</b>\n\n"
         f"👤 Пользователь: {user.full_name} (@{user.username or 'нет'})\n"
         f"🆔 ID: <code>{user.id}</code>\n"
         f"📦 Тариф: {tariff['name']}\n"
+        f"📺 Канал: {chat_name}\n"
         f"💵 Сумма: {payment['amount']:.0f} ₽\n"
         f"💳 Метод: Ручной перевод"
     )
@@ -316,7 +323,14 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
     tariff = await db.get_tariff(payment["tariff_id"])
     await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"])
 
-    link = await grant_access(bot, payment["user_id"])
+    # chat_index: из платежа → из тарифа → 0
+    chat_index = payment.get("chat_index")
+    if chat_index is None:
+        chat_index = tariff.get("chat_index", 0)
+    if chat_index is None:
+        chat_index = 0
+
+    link = await grant_access(bot, payment["user_id"], chat_index)
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
 
     await bot.send_message(
