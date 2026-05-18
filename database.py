@@ -239,19 +239,22 @@ async def get_active_subscription(user_id: int, chat_index: int | None = None) -
                 return await cur.fetchone()
 
 
-async def create_subscription(user_id: int, tariff_id: int, days: int) -> int:
+async def create_subscription(user_id: int, tariff_id: int, days: int,
+                               chat_index: int = 0) -> int:
     from datetime import timedelta
     now = datetime.utcnow()
     expires = now + timedelta(days=days)
 
     async with aiosqlite.connect(DB_PATH) as db:
+        # Деактивируем только подписки этого конкретного чата, не все
         await db.execute(
-            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ?", (user_id,)
+            "UPDATE subscriptions SET is_active = 0 WHERE user_id = ? AND chat_index = ?",
+            (user_id, chat_index)
         )
         cur = await db.execute("""
-            INSERT INTO subscriptions (user_id, tariff_id, starts_at, expires_at)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, tariff_id, now.isoformat(), expires.isoformat()))
+            INSERT INTO subscriptions (user_id, tariff_id, starts_at, expires_at, chat_index)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, tariff_id, now.isoformat(), expires.isoformat(), chat_index))
         await db.commit()
         return cur.lastrowid
 
