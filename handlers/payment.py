@@ -2,6 +2,7 @@ from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from datetime import datetime, timedelta
 
 import database as db
 from config import config
@@ -15,6 +16,41 @@ class PaymentState(StatesGroup):
     waiting_screenshot = State()
 
 
+# ─── ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: выдача доступа по 100% промокоду ────────────────
+
+async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dict):
+    """Вызывается когда final_price == 0 — выдаём доступ без оплаты."""
+    data = await state.get_data()
+    promo_code = data.get("promo_code")
+    chat_index = data.get("chat_index", 0)
+
+    payment_id = await db.create_payment(
+        user_id=call.from_user.id,
+        tariff_id=tariff["id"],
+        amount=0,
+        method="promo_100",
+        promo_code=promo_code
+    )
+    await db.confirm_payment(payment_id, admin_id=0)
+    await db.create_subscription(call.from_user.id, tariff["id"], tariff["days"])
+
+    # Помечаем промокод использованным только после успешной активации
+    if promo_code:
+        await db.use_promo(promo_code)
+
+    link = await grant_access(call.bot, call.from_user.id, chat_index)
+    expires = datetime.utcnow() + timedelta(days=tariff["days"])
+
+    await call.message.edit_text(
+        f"🎉 <b>Промокод активирован — доступ открыт!</b>\n\n"
+        f"📦 Тариф: <b>{tariff['name']}</b>\n"
+        f"🔗 Ссылка для входа: {link}\n"
+        f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
+        parse_mode="HTML"
+    )
+    await state.clear()
+
+
 # ─── MANUAL PAYMENT ────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pay_manual:"))
@@ -25,6 +61,11 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
     promo_code = data.get("promo_code")
     final_price = data.get("final_price", tariff["price"])
 
+    # При 100% скидке — сразу выдаём доступ, без оплаты
+    if final_price == 0:
+        await _grant_free_access(call, state, tariff)
+        return
+
     payment_id = await db.create_payment(
         user_id=call.from_user.id,
         tariff_id=tariff_id,
@@ -32,10 +73,12 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
         method="manual",
         promo_code=promo_code
     )
+    # Помечаем промокод использованным после создания платежа
     if promo_code:
         await db.use_promo(promo_code)
 
-    payment_details = await db.get_setting("payment_details", config.MANUAL_PAYMENT_DETAILS)
+    # Реквизиты хранятся в БД, config.MANUAL_PAYMENT_DETAILS не используем
+    payment_details = await db.get_setting("payment_details", "Реквизиты не настроены — обратитесь к администратору.")
 
     text = (
         f"💳 <b>Ручная оплата</b>\n\n"
@@ -77,7 +120,7 @@ async def handle_screenshot(message: Message, state: FSMContext, bot: Bot):
         reply_markup=back_kb()
     )
 
-    # Notify admins
+    # Уведомляем администраторов
     payment = await db.get_payment(payment_id)
     tariff = await db.get_tariff(payment["tariff_id"])
     user = message.from_user
@@ -119,6 +162,11 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     promo_code = data.get("promo_code")
     final_price = data.get("final_price", tariff["price"])
+
+    # При 100% скидке — сразу выдаём доступ, без оплаты
+    if final_price == 0:
+        await _grant_free_access(call, state, tariff)
+        return
 
     if config.YUKASSA_ENABLED:
         await _pay_yukassa(call, tariff, final_price, promo_code, state)
@@ -165,7 +213,6 @@ async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
             }
         }, uuid.uuid4())
 
-        # Save external ID
         async with __import__("aiosqlite").connect(__import__("config").config.DB_PATH) as dbc:
             await dbc.execute(
                 "UPDATE payments SET external_id = ? WHERE id = ?",
@@ -173,7 +220,7 @@ async def _pay_yukassa(call: CallbackQuery, tariff, amount: float,
             )
             await dbc.commit()
 
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        from aiogram.types import InlineKeyboardButton
         from aiogram.utils.keyboard import InlineKeyboardBuilder
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="💳 Перейти к оплате", url=payment.confirmation.confirmation_url))
@@ -195,7 +242,7 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
                        promo_code: str | None, state: FSMContext):
     """Создать платёж в Тинькофф и вернуть ссылку пользователю."""
     try:
-        import hashlib, json
+        import hashlib
         import aiohttp
 
         payment_db_id = await db.create_payment(
@@ -216,7 +263,6 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
             "Description": f"Подписка: {tariff['name']}",
             "DATA": {"UserId": str(call.from_user.id)},
         }
-        # Token
         token_data = {**payload, "Password": config.TINKOFF_SECRET_KEY}
         token_str = "".join(str(v) for k, v in sorted(token_data.items())
                             if isinstance(v, (str, int)))
@@ -231,7 +277,6 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
 
         if data.get("Success"):
             pay_url = data["PaymentURL"]
-            # Save external ID
             async with __import__("aiosqlite").connect(config.DB_PATH) as dbc:
                 await dbc.execute(
                     "UPDATE payments SET external_id = ? WHERE id = ?",
@@ -272,7 +317,6 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
     await db.create_subscription(payment["user_id"], payment["tariff_id"], tariff["days"])
 
     link = await grant_access(bot, payment["user_id"])
-    from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
 
     await bot.send_message(
