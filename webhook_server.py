@@ -64,7 +64,14 @@ async def handle_yoomoney_webhook(request: Request):
             data.get("label", ""),
         ])
         expected = hashlib.sha1(check_str.encode()).hexdigest()
-        received = data.get("sha1_hash", "")
+
+        # YooMoney в тестовых уведомлениях шлёт поле "sign",
+        # в реальных — "sha1_hash". Поддерживаем оба варианта.
+        received = data.get("sha1_hash") or data.get("sign", "")
+
+        if not received:
+            logger.warning("ЮМани: отсутствует подпись")
+            return Response(status_code=401)
 
         if not hmac.compare_digest(expected, received):
             logger.warning("ЮМани: неверная подпись")
@@ -145,7 +152,7 @@ async def handle_nowpayments_webhook(request: Request):
                 (data.get("actually_paid"), int(payment_db_id))
             )
             await dbc.commit()
-        
+
         bot = await get_bot()
         from handlers.payment import process_payment_confirmed
         await process_payment_confirmed(int(payment_db_id), bot)
