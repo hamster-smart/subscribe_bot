@@ -75,6 +75,14 @@ async def handle_yoomoney_webhook(request: Request):
             logger.warning("ЮМани: нет label")
             return Response(status_code=200)
 
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as dbc:
+            await dbc.execute(
+                "UPDATE payments SET paid_amount=? WHERE id=?",
+                (data.get("amount"), int(payment_db_id))
+            )
+            await dbc.commit()
+
         bot = await get_bot()
         from handlers.payment import process_payment_confirmed
         await process_payment_confirmed(int(payment_db_id), bot)
@@ -130,6 +138,14 @@ async def handle_nowpayments_webhook(request: Request):
         if not payment_db_id:
             logger.warning("NOWPayments: нет order_id")
             return Response(status_code=200)
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as dbc:
+            await dbc.execute(
+                "UPDATE payments SET paid_amount=? WHERE id=?",
+                (data.get("actually_paid"), int(payment_db_id))
+            )
+            await dbc.commit()
+        
         bot = await get_bot()
         from handlers.payment import process_payment_confirmed
         await process_payment_confirmed(int(payment_db_id), bot)
