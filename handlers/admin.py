@@ -416,6 +416,7 @@ async def show_user_info(message, user_id: int, bot: Bot, edit: bool = False):
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎁 Выдать подписку", callback_data=f"admin_grant:{user_id}"))
+    builder.row(InlineKeyboardButton(text="➕ +30 дней", callback_data=f"admin_add30:{user_id}"))  # ← добавить
     builder.row(InlineKeyboardButton(text="🚫 Отозвать доступ", callback_data=f"admin_revoke:{user_id}"))
     builder.row(InlineKeyboardButton(text="🦵 Кик из канала", callback_data=f"admin_kick_user:{user_id}"))
     builder.row(InlineKeyboardButton(text="🔄 Сбросить триал", callback_data=f"admin_reset_trial:{user_id}"))
@@ -561,6 +562,60 @@ async def cb_admin_unban_user(call: CallbackQuery, bot: Bot):
         await dbc.execute("UPDATE users SET is_banned=0 WHERE user_id=?", (user_id,))
         await dbc.commit()
     await call.answer("✅ Разбанен", show_alert=False)
+    await show_user_info(call.message, user_id, bot, edit=True)
+
+@router.callback_query(F.data.startswith("admin_add30:"))
+async def cb_admin_add30(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    user_id = int(call.data.split(":")[1])
+
+    import aiosqlite
+    from datetime import datetime, timedelta
+
+    async with aiosqlite.connect(config.DB_PATH) as dbc:
+        dbc.row_factory = aiosqlite.Row
+        async with dbc.execute(
+            "SELECT * FROM subscriptions WHERE user_id=? AND is_active=1 "
+            "ORDER BY expires_at DESC LIMIT 1",
+            (user_id,)
+        ) as cur:
+            sub = await cur.fetchone()
+
+        if sub:
+            new_exp = datetime.fromisoformat(sub["expires_at"]) + timedelta(days=30)
+            await dbc.execute(
+                "UPDATE subscriptions SET expires_at=? WHERE id=?",
+                (new_exp.isoformat(), sub["id"])
+            )
+        else:
+            async with dbc.execute(
+                "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY sort_order LIMIT 1"
+            ) as cur2:
+                base = await cur2.fetchone()
+            tariff_id  = base["id"] if base else 2
+            chat_index = base["chat_index"] or 0 if base else 0
+            now = datetime.utcnow()
+            new_exp = now + timedelta(days=30)
+            await dbc.execute(
+                "INSERT INTO subscriptions (user_id, tariff_id, starts_at, expires_at, chat_index) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, tariff_id, now.isoformat(), new_exp.isoformat(), chat_index)
+            )
+
+        await dbc.commit()
+
+    try:
+        await bot.send_message(
+            user_id,
+            f"🎁 <b>+30 дней добавлено!</b>\n"
+            f"📅 Действует до: <b>{new_exp.strftime('%d.%m.%Y')}</b>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+    await call.answer("✅ +30 дней добавлено!", show_alert=False)
     await show_user_info(call.message, user_id, bot, edit=True)
 
 
