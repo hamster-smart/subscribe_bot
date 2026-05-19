@@ -1,5 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from config import config
 
 
 def main_menu_kb(support_enabled: bool = True) -> InlineKeyboardMarkup:
@@ -29,10 +30,25 @@ def tariff_detail_kb(tariff_id: int, has_promo: bool = False) -> InlineKeyboardM
         text="💳 Оплатить вручную",
         callback_data=f"pay_manual:{tariff_id}"
     ))
-    builder.row(InlineKeyboardButton(
-        text="🏦 ЮКасса / Тинькофф",
-        callback_data=f"pay_online:{tariff_id}"
-    ))
+    
+    # Кнопку онлайн-оплаты показываем только если хоть один провайдер включён
+    if config.YUKASSA_ENABLED:
+        online_label = "🏦 Оплатить через ЮКассу"
+    elif config.TINKOFF_ENABLED:
+        online_label = "🏦 Оплатить через Тинькофф"
+    elif config.YOOMONEY_ENABLED:
+        online_label = "💳 Оплатить через ЮМани"
+    elif config.NOWPAYMENTS_ENABLED:
+        online_label = "🪙 Оплатить криптой"
+    else:
+        online_label = None
+
+    if online_label:
+        builder.row(InlineKeyboardButton(
+            text=online_label,
+            callback_data=f"pay_online:{tariff_id}"
+        ))
+
     if not has_promo:
         builder.row(InlineKeyboardButton(
             text="🎟 Ввести промокод",
@@ -40,7 +56,6 @@ def tariff_detail_kb(tariff_id: int, has_promo: bool = False) -> InlineKeyboardM
         ))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="show_tariffs"))
     return builder.as_markup()
-
 
 def manual_payment_kb(payment_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
