@@ -39,9 +39,9 @@ async def handle_yukassa_webhook(request: Request):
             await process_payment_confirmed(int(payment_db_id), bot)
         finally:
             await bot.session.close()
-   except Exception as e:
+    except Exception as e:
        logger.error(f"YooMoney webhook error: {e}")
-   return Response(status_code=200)
+    return Response(status_code=200)
 
 
 @app.post("/webhook/yoomoney")
@@ -98,9 +98,9 @@ async def handle_yoomoney_webhook(request: Request):
             await process_payment_confirmed(int(payment_db_id), bot)
         finally:
             await bot.session.close()
-   except Exception as e:
+    except Exception as e:
        logger.error(f"YooMoney webhook error: {e}")
-   return Response(status_code=200)
+    return Response(status_code=200)
 
 
 @app.post("/webhook/tinkoff")
@@ -127,9 +127,9 @@ async def handle_tinkoff_webhook(request: Request):
             await process_payment_confirmed(int(payment_db_id), bot)
         finally:
             await bot.session.close()
-   except Exception as e:
+    except Exception as e:
        logger.error(f"YooMoney webhook error: {e}")
-   return Response(status_code=200)
+    return Response(status_code=200)
 
 
 @app.post("/webhook/nowpayments")
@@ -167,6 +167,6 @@ async def handle_nowpayments_webhook(request: Request):
             await process_payment_confirmed(int(payment_db_id), bot)
         finally:
             await bot.session.close()
-   except Exception as e:
+    except Exception as e:
        logger.error(f"YooMoney webhook error: {e}")
-   return Response(status_code=200)
+    return Response(status_code=200)
