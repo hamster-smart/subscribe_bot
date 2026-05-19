@@ -24,10 +24,20 @@ class Config(BaseSettings):
     YUKASSA_SHOP_ID: str = ""
     YUKASSA_SECRET_KEY: str = ""
 
+     # ─── PAYMENT: ЮМани ────────────────────────────────────
+    YOOMONEY_ENABLED: bool = False
+    YOOMONEY_RECEIVER: str = ""
+    YOOMONEY_SECRET: str = ""
+
     # ─── PAYMENT: Тинькофф ─────────────────────────────────
     TINKOFF_ENABLED: bool = False
     TINKOFF_TERMINAL_KEY: str = ""
     TINKOFF_SECRET_KEY: str = ""
+
+    # ─── PAYMENT: NOWPayments ──────────────────────────────
+    NOWPAYMENTS_ENABLED: bool = False
+    NOWPAYMENTS_API_KEY: str = ""
+    NOWPAYMENTS_IPN_SECRET: str = ""
 
     # ─── PAYMENT: Ручной перевод ───────────────────────────
     MANUAL_PAYMENT_ENABLED: bool = True
