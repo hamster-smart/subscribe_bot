@@ -34,12 +34,14 @@ async def handle_yukassa_webhook(request: Request):
             logger.warning("No payment_db_id in yukassa webhook")
             return Response(status_code=200)
         bot = await get_bot()
-        from handlers.payment import process_payment_confirmed
-        await process_payment_confirmed(int(payment_db_id), bot)
-        await bot.session.close()
-    except Exception as e:
-        logger.error(f"YuKassa webhook error: {e}")
-    return Response(status_code=200)
+        try:
+            from handlers.payment import process_payment_confirmed
+            await process_payment_confirmed(int(payment_db_id), bot)
+        finally:
+            await bot.session.close()
+        except Exception as e:
+            logger.error(f"YooMoney webhook error: {e}")
+        return Response(status_code=200)
 
 
 @app.post("/webhook/yoomoney")
@@ -65,8 +67,7 @@ async def handle_yoomoney_webhook(request: Request):
         expected = _hmac.new(config.YOOMONEY_SECRET.encode(), check_str.encode(), hashlib.sha256).hexdigest()
 
         # YooMoney шлёт подпись в поле "sign" (в т.ч. тестовые уведомления)
-        received = data.get("sha1_hash") or data.get("sign", "")
-
+        received = data.get("sign") or data.get("sha1_hash", "")
         if not received:
             logger.warning("ЮМани: отсутствует подпись")
             return Response(status_code=401)
@@ -92,12 +93,14 @@ async def handle_yoomoney_webhook(request: Request):
             await dbc.commit()
 
         bot = await get_bot()
-        from handlers.payment import process_payment_confirmed
-        await process_payment_confirmed(int(payment_db_id), bot)
-        await bot.session.close()
-    except Exception as e:
-        logger.error(f"YooMoney webhook error: {e}")
-    return Response(status_code=200)
+        try:
+            from handlers.payment import process_payment_confirmed
+            await process_payment_confirmed(int(payment_db_id), bot)
+        finally:
+            await bot.session.close()
+        except Exception as e:
+            logger.error(f"YooMoney webhook error: {e}")
+        return Response(status_code=200)
 
 
 @app.post("/webhook/tinkoff")
@@ -119,26 +122,28 @@ async def handle_tinkoff_webhook(request: Request):
         if not payment_db_id:
             return Response(status_code=200)
         bot = await get_bot()
-        from handlers.payment import process_payment_confirmed
-        await process_payment_confirmed(payment_db_id, bot)
-        await bot.session.close()
-    except Exception as e:
-        logger.error(f"Tinkoff webhook error: {e}")
-    return Response(status_code=200)
+        try:
+            from handlers.payment import process_payment_confirmed
+            await process_payment_confirmed(int(payment_db_id), bot)
+        finally:
+            await bot.session.close()
+        except Exception as e:
+            logger.error(f"YooMoney webhook error: {e}")
+        return Response(status_code=200)
 
 
 @app.post("/webhook/nowpayments")
 async def handle_nowpayments_webhook(request: Request):
     try:
-        import hmac
+        import hmac as _hmac
         body = await request.read()
         sig = request.headers.get("x-nowpayments-sig", "")
-        expected = hmac.new(
+        expected = _hmac.new(
             config.NOWPAYMENTS_IPN_SECRET.encode(),
             body,
             hashlib.sha512
         ).hexdigest()
-        if not hmac.compare_digest(sig, expected):
+        if not _hmac.compare_digest(sig, expected):
             logger.warning("NOWPayments: неверная подпись")
             return Response(status_code=401)
         data = json.loads(body)
@@ -156,10 +161,12 @@ async def handle_nowpayments_webhook(request: Request):
             )
             await dbc.commit()
 
-        bot = await get_bot()
-        from handlers.payment import process_payment_confirmed
-        await process_payment_confirmed(int(payment_db_id), bot)
-        await bot.session.close()
-    except Exception as e:
-        logger.error(f"NOWPayments webhook error: {e}")
-    return Response(status_code=200)
+         bot = await get_bot()
+        try:
+            from handlers.payment import process_payment_confirmed
+            await process_payment_confirmed(int(payment_db_id), bot)
+        finally:
+            await bot.session.close()
+        except Exception as e:
+            logger.error(f"YooMoney webhook error: {e}")
+        return Response(status_code=200)
