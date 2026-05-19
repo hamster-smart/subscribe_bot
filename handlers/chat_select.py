@@ -3,9 +3,8 @@
   /start → выбор чата → выбор тарифа → выбор валюты → выбор метода оплаты → оплата
 """
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 
@@ -19,14 +18,8 @@ router = Router()
 
 def chats_kb() -> object:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text=config.CHANNEL_1_NAME,
-        callback_data="choose_chat:0"
-    ))
-    builder.row(InlineKeyboardButton(
-        text=config.CHANNEL_2_NAME,
-        callback_data="choose_chat:1"
-    ))
+    builder.row(InlineKeyboardButton(text=config.CHANNEL_1_NAME, callback_data="choose_chat:0"))
+    builder.row(InlineKeyboardButton(text=config.CHANNEL_2_NAME, callback_data="choose_chat:1"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
     return builder.as_markup()
 
@@ -39,61 +32,42 @@ def currency_kb(tariff_id: int, chat_index: int, currencies: list[str]) -> objec
             text=labels.get(cur, cur),
             callback_data=f"choose_currency:{tariff_id}:{chat_index}:{cur}"
         ))
-    builder.row(InlineKeyboardButton(
-        text="◀️ Назад",
-        callback_data=f"choose_chat:{chat_index}"
-    ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"choose_chat:{chat_index}"))
     return builder.as_markup()
 
-def payment_methods_kb(tariff_id: int, chat_index: int,
-                       currency: str, methods: list) -> object:
+
+def payment_methods_kb(tariff_id: int, chat_index: int, currency: str, methods: list) -> object:
     builder = InlineKeyboardBuilder()
-    
-    # ЮМани — только для RUB
     if currency == "RUB" and config.YOOMONEY_ENABLED:
         builder.row(InlineKeyboardButton(
             text="💳 ЮМани (онлайн, RUB)",
             callback_data=f"pay_online_yoomoney:{tariff_id}:{chat_index}"
         ))
-    
-    # Крипта — для любой валюты
     if config.NOWPAYMENTS_ENABLED:
         builder.row(InlineKeyboardButton(
             text="🪙 Криптовалюта (USDT, BTC...)",
             callback_data=f"pay_online_nowpayments:{tariff_id}:{chat_index}"
         ))
-    
     for m in methods:
         builder.row(InlineKeyboardButton(
             text=m["name"],
             callback_data=f"choose_method:{tariff_id}:{chat_index}:{currency}:{m['id']}"
         ))
-    builder.row(InlineKeyboardButton(
-        text="◀️ Назад",
-        callback_data=f"select_tariff_chat:{tariff_id}:{chat_index}"
-    ))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"select_tariff_chat:{tariff_id}:{chat_index}"))
     return builder.as_markup()
 
-def pay_link_kb(url: str, tariff_id: int, chat_index: int,
-                payment_id: int) -> object:
-    """Кнопка-ссылка на оплату + кнопка отправки скриншота."""
+
+def pay_link_kb(url: str, tariff_id: int, chat_index: int, payment_id: int) -> object:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="💳 Перейти к оплате", url=url))
-    builder.row(InlineKeyboardButton(
-        text="📷 Отправить скриншот",
-        callback_data=f"send_screenshot:{payment_id}"
-    ))
+    builder.row(InlineKeyboardButton(text="📷 Отправить скриншот", callback_data=f"send_screenshot:{payment_id}"))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
     return builder.as_markup()
 
 
 def pay_text_kb(payment_id: int) -> object:
-    """Кнопки для текстовых реквизитов."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="📷 Отправить скриншот",
-        callback_data=f"send_screenshot:{payment_id}"
-    ))
+    builder.row(InlineKeyboardButton(text="📷 Отправить скриншот", callback_data=f"send_screenshot:{payment_id}"))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
     return builder.as_markup()
 
@@ -102,11 +76,9 @@ def pay_text_kb(payment_id: int) -> object:
 
 @router.callback_query(F.data == "show_tariffs")
 async def cb_show_tariffs_entry(call: CallbackQuery):
-    """Точка входа — сначала выбор чата."""
     await call.message.edit_text(
         "🏠 <b>Выберите чат</b>\n\nК какому чату хотите получить доступ?",
-        reply_markup=chats_kb(),
-        parse_mode="HTML"
+        reply_markup=chats_kb(), parse_mode="HTML"
     )
 
 
@@ -114,34 +86,25 @@ async def cb_show_tariffs_entry(call: CallbackQuery):
 async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
     chat_index = int(call.data.split(":")[1])
     await state.update_data(chat_index=chat_index)
-
     chat_tariffs = await db.get_tariffs(chat_index=chat_index)
-
     if not chat_tariffs:
         await call.answer("Тарифы временно недоступны", show_alert=True)
         return
-
-    # ✅ Передаём chat_index — пробный проверяется отдельно для каждого чата
     used_trial = await db.has_used_trial(call.from_user.id, chat_index)
     builder = InlineKeyboardBuilder()
     for t in chat_tariffs:
         if t["is_trial"]:
             if used_trial:
-                continue  # скрыть пробный если уже использован для этого чата
+                continue
             label = f"{t['name']} — Бесплатно"
         else:
             label = f"{t['name']} — {t['price']:.0f} {t['currency'] or 'RUB'}"
-        builder.row(InlineKeyboardButton(
-            text=label,
-            callback_data=f"select_tariff_chat:{t['id']}:{chat_index}"
-        ))
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"select_tariff_chat:{t['id']}:{chat_index}"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="show_tariffs"))
-
     chat_name = config.get_channel_name(chat_index)
     await call.message.edit_text(
         f"📋 <b>Тарифы для {chat_name}</b>\n\nВыберите тариф:",
-        reply_markup=builder.as_markup(),
-        parse_mode="HTML"
+        reply_markup=builder.as_markup(), parse_mode="HTML"
     )
 
 
@@ -149,8 +112,6 @@ async def cb_choose_chat(call: CallbackQuery, state: FSMContext):
 async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
     _, tariff_id, chat_index = call.data.split(":")
     tariff_id, chat_index = int(tariff_id), int(chat_index)
-
-    # Всегда обновляем chat_index в state — главная точка истины
     await state.update_data(chat_index=chat_index)
 
     tariff = await db.get_tariff(tariff_id)
@@ -169,10 +130,121 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
                 price = max(0, price - promo["discount_rub"])
                 promo_text = f"\n🎟 Промокод <b>{promo_code}</b>: -{promo['discount_rub']:.0f}₽"
 
-    await state.update_data(
-        selected_tariff_id=tariff_id,
-        final_price=price
+    await state.update_data(selected_tariff_id=tariff_id, final_price=price)
+
+    # ── ПРОБНЫЙ ТАРИФ ────────────────────────────────────────────────────────
+    if tariff["is_trial"]:
+        used = await db.has_used_trial(call.from_user.id, chat_index)
+        if used:
+            await call.answer("❌ Пробный тариф можно использовать только один раз.", show_alert=True)
+            return
+        await db.create_subscription(call.from_user.id, tariff_id, tariff["days"], chat_index)
+        from datetime import datetime, timedelta
+        expires = datetime.utcnow() + timedelta(days=tariff["days"])
+        chat_name = config.get_channel_name(chat_index)
+        from services.channel import grant_trial_access
+        link = await grant_trial_access(call.bot, call.from_user.id, chat_index)
+        await call.message.edit_text(
+            f"🎁 <b>Пробный доступ активирован!</b>\n\n"
+            f"📺 Канал: {chat_name}\n"
+            f"🔗 Ссылка для вступления: {link}\n"
+            f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
+            f"⚠️ В пробном режиме доступно только чтение.\n"
+            f"Для участия в обсуждениях оформите платную подписку: /start",
+            parse_mode="HTML"
+        )
+        return
+    # ─────────────────────────────────────────────────────────────────────────
+
+    methods = await db.get_payment_methods()
+    currencies = list(dict.fromkeys(m["currency"] for m in methods))
+    chat_name = config.get_channel_name(chat_index)
+    text = (
+        f"📦 <b>{tariff['name']}</b> → {chat_name}\n\n"
+        f"📝 {tariff['description']}\n"
+        f"⏳ Срок: <b>{tariff['days']} дней</b>\n"
+        f"💰 Стоимость: <b>{price:.0f} {tariff['currency'] or 'RUB'}</b>{promo_text}\n\n"
+        f"В какой валюте будет оплата?"
     )
+    if len(currencies) == 1:
+        currency_methods = await db.get_payment_methods(currencies[0])
+        await call.message.edit_text(
+            text + f"\n\nВыберите способ оплаты ({currencies[0]}):",
+            reply_markup=payment_methods_kb(tariff_id, chat_index, currencies[0], currency_methods),
+            parse_mode="HTML"
+        )
+    else:
+        await call.message.edit_text(
+            text,
+            reply_markup=currency_kb(tariff_id, chat_index, currencies),
+            parse_mode="HTML"
+        )
+
+
+@router.callback_query(F.data.startswith("choose_currency:"))
+async def cb_choose_currency(call: CallbackQuery, state: FSMContext):
+    _, tariff_id, chat_index, currency = call.data.split(":")
+    tariff_id, chat_index = int(tariff_id), int(chat_index)
+    await state.update_data(chat_index=chat_index)
+    methods = await db.get_payment_methods(currency)
+    if not methods:
+        await call.answer("Методы оплаты не настроены", show_alert=True)
+        return
+    tariff = await db.get_tariff(tariff_id)
+    await call.message.edit_text(
+        f"💱 <b>Оплата в {currency}</b>\n\nТариф: {tariff['name']}\nВыберите способ:",
+        reply_markup=payment_methods_kb(tariff_id, chat_index, currency, methods),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("choose_method:"))
+async def cb_choose_method(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split(":")
+    tariff_id, chat_index, currency, method_id = int(parts[1]), int(parts[2]), parts[3], int(parts[4])
+    await state.update_data(chat_index=chat_index)
+    tariff = await db.get_tariff(tariff_id)
+    data = await state.get_data()
+    final_price = data.get("final_price", tariff["price"])
+    promo_code = data.get("promo_code")
+    methods = await db.get_payment_methods(currency)
+    method = next((m for m in methods if m["id"] == method_id), None)
+    if not method:
+        await call.answer("Метод не найден", show_alert=True)
+        return
+    payment_id = await db.create_payment(
+        user_id=call.from_user.id,
+        tariff_id=tariff_id,
+        amount=final_price,
+        method=f"manual_{method['name']}",
+        promo_code=promo_code,
+        chat_index=chat_index,
+        currency=currency
+    )
+    if promo_code:
+        await db.use_promo(promo_code)
+    await state.update_data(current_payment_id=payment_id, pending_chat_index=chat_index)
+    chat_name = config.get_channel_name(chat_index)
+    if method["is_link"]:
+        text = (
+            f"💳 <b>{method['name']}</b>\n\n"
+            f"📦 {tariff['name']} → {chat_name}\n"
+            f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
+            f"Нажмите кнопку для перехода к оплате.\n"
+            f"После оплаты вернитесь и отправьте квитанцию/скриншот."
+        )
+        await call.message.edit_text(text, reply_markup=pay_link_kb(method["details"], tariff_id, chat_index, payment_id), parse_mode="HTML")
+    else:
+        text = (
+            f"💳 <b>{method['name']}</b>\n\n"
+            f"📦 {tariff['name']} → {chat_name}\n"
+            f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
+            f"<b>Реквизиты для перевода:</b>\n"
+            f"{method['details']}\n\n"
+            f"После оплаты отправьте квитанцию/скриншот."
+        )
+        await call.message.edit_text(text, reply_markup=pay_text_kb(payment_id), parse_mode="HTML")
+
 
 @router.callback_query(F.data.startswith("pay_online_yoomoney:"))
 async def cb_pay_yoomoney_flow(call: CallbackQuery, state: FSMContext):
@@ -196,158 +268,3 @@ async def cb_pay_nowpayments_flow(call: CallbackQuery, state: FSMContext):
     promo_code = data.get("promo_code")
     from handlers.payment import _pay_nowpayments
     await _pay_nowpayments(call, tariff, final_price, promo_code, chat_index, state)
-
-    # ── ПРОБНЫЙ ТАРИФ — сразу выдать доступ ──────────────────────────────────
-    if tariff["is_trial"]:
-        # ✅ Передаём chat_index — пробный проверяется отдельно для каждого чата
-        used = await db.has_used_trial(call.from_user.id, chat_index)
-        if used:
-            await call.answer(
-                "❌ Пробный тариф можно использовать только один раз.",
-                show_alert=True
-            )
-            return
-        # Создать бесплатную подписку
-        await db.create_subscription(call.from_user.id, tariff_id, tariff["days"], chat_index)
-        from datetime import datetime, timedelta
-        expires = datetime.utcnow() + timedelta(days=tariff["days"])
-        chat_name = config.get_channel_name(chat_index)
-
-        # Выдать одноразовую invite-ссылку
-        from services.channel import grant_trial_access
-        link = await grant_trial_access(call.bot, call.from_user.id, chat_index)
-        text = (
-            f"🎁 <b>Пробный доступ активирован!</b>\n\n"
-            f"📺 Канал: {chat_name}\n"
-            f"🔗 Ссылка для вступления: {link}\n"
-            f"📅 Действует до: <b>{expires.strftime('%d.%m.%Y %H:%M')}</b>\n\n"
-            f"⚠️ В пробном режиме доступно только чтение.\n"
-            f"Для участия в обсуждениях оформите платную подписку: /start"
-        )
-
-        await call.message.edit_text(text, parse_mode="HTML")
-        return
-    # ─────────────────────────────────────────────────────────────────────────
-
-    # Собрать доступные валюты из методов оплаты
-    methods = await db.get_payment_methods()
-    currencies = list(dict.fromkeys(m["currency"] for m in methods))  # уникальные, по порядку
-
-    chat_name = config.get_channel_name(chat_index)
-    text = (
-        f"📦 <b>{tariff['name']}</b> → {chat_name}\n\n"
-        f"📝 {tariff['description']}\n"
-        f"⏳ Срок: <b>{tariff['days']} дней</b>\n"
-        f"💰 Стоимость: <b>{price:.0f} {tariff['currency'] or 'RUB'}</b>{promo_text}\n\n"
-        f"В какой валюте будет оплата?"
-    )
-
-    if len(currencies) == 1:
-        # Только одна валюта — сразу к методам
-        currency_methods = await db.get_payment_methods(currencies[0])
-        await call.message.edit_text(
-            text + f"\n\nВыберите способ оплаты ({currencies[0]}):",
-            reply_markup=payment_methods_kb(tariff_id, chat_index, currencies[0], currency_methods),
-            parse_mode="HTML"
-        )
-    else:
-        await call.message.edit_text(
-            text,
-            reply_markup=currency_kb(tariff_id, chat_index, currencies),
-            parse_mode="HTML"
-        )
-
-
-@router.callback_query(F.data.startswith("choose_currency:"))
-async def cb_choose_currency(call: CallbackQuery, state: FSMContext):
-    _, tariff_id, chat_index, currency = call.data.split(":")
-    tariff_id, chat_index = int(tariff_id), int(chat_index)
-
-    # Синхронизируем state при навигации назад/вперёд
-    await state.update_data(chat_index=chat_index)
-
-    methods = await db.get_payment_methods(currency)
-    if not methods:
-        await call.answer("Методы оплаты не настроены", show_alert=True)
-        return
-
-    tariff = await db.get_tariff(tariff_id)
-    await call.message.edit_text(
-        f"💱 <b>Оплата в {currency}</b>\n\n"
-        f"Тариф: {tariff['name']}\n"
-        f"Выберите способ:",
-        reply_markup=payment_methods_kb(tariff_id, chat_index, currency, methods),
-        parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data.startswith("choose_method:"))
-async def cb_choose_method(call: CallbackQuery, state: FSMContext):
-    parts = call.data.split(":")
-    tariff_id, chat_index, currency, method_id = int(parts[1]), int(parts[2]), parts[3], int(parts[4])
-
-    # Обновляем chat_index при каждом шаге выбора
-    await state.update_data(chat_index=chat_index)
-
-    tariff = await db.get_tariff(tariff_id)
-    data = await state.get_data()
-    final_price = data.get("final_price", tariff["price"])
-    promo_code = data.get("promo_code")
-
-    # Получить метод оплаты
-    methods = await db.get_payment_methods(currency)
-    method = next((m for m in methods if m["id"] == method_id), None)
-    if not method:
-        await call.answer("Метод не найден", show_alert=True)
-        return
-
-    # Создать платёж в БД — chat_index сохраняется в записи платежа
-    payment_id = await db.create_payment(
-        user_id=call.from_user.id,
-        tariff_id=tariff_id,
-        amount=final_price,
-        method=f"manual_{method['name']}",
-        promo_code=promo_code,
-        chat_index=chat_index,
-        currency=currency
-    )
-    if promo_code:
-        await db.use_promo(promo_code)
-
-    # Сохранить chat_index для подтверждения
-    await state.update_data(
-        current_payment_id=payment_id,
-        pending_chat_index=chat_index
-    )
-
-    chat_name = config.get_channel_name(chat_index)
-
-    if method["is_link"]:
-        # Ссылка — показываем кнопку
-        text = (
-            f"💳 <b>{method['name']}</b>\n\n"
-            f"📦 {tariff['name']} → {chat_name}\n"
-            f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
-            f"Нажмите кнопку для перехода к оплате.\n"
-            f"После оплаты вернитесь и отправьте квитанцию/скриншот."
-        )
-        await call.message.edit_text(
-            text,
-            reply_markup=pay_link_kb(method["details"], tariff_id, chat_index, payment_id),
-            parse_mode="HTML"
-        )
-    else:
-        # Текстовые реквизиты
-        text = (
-            f"💳 <b>{method['name']}</b>\n\n"
-            f"📦 {tariff['name']} → {chat_name}\n"
-            f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
-            f"<b>Реквизиты для перевода:</b>\n"
-            f"{method['details']}\n\n"
-            f"После оплаты отправьте квитанцию/скриншот."
-        )
-        await call.message.edit_text(
-            text,
-            reply_markup=pay_text_kb(payment_id),
-            parse_mode="HTML"
-        )
