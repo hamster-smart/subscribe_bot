@@ -1,6 +1,6 @@
 """
 Webhook server для приёма уведомлений от платёжных систем.
-Запускается отдельно: uvicorn webhook_server:app --host 0.0.0.0 --port 8000
+Запускается отдельно: uvicorn webhook_server:app --host 0.0.0.0 --port 8080
 """
 import hashlib
 import json
