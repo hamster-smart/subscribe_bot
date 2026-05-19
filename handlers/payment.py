@@ -168,7 +168,7 @@ async def cb_awaiting_confirm(call: CallbackQuery):
     await call.answer("⏳ Ожидаем подтверждения администратора. Мы уведомим Вас.", show_alert=True)
 
 
-# ─── ONLINE PAYMENT (ЮКасса / Тинькофф) ────────────────────────────────────────
+# ─── ONLINE PAYMENT (ЮКасса / Тинькофф / ЮМани / NOWPayments) ────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("pay_online:"))
 async def cb_pay_online(call: CallbackQuery, state: FSMContext):
@@ -186,10 +186,14 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
         await _grant_free_access(call, state, tariff)
         return
 
-    if config.YUKASSA_ENABLED:
+     if config.YUKASSA_ENABLED:
         await _pay_yukassa(call, tariff, final_price, promo_code, chat_index, state)
     elif config.TINKOFF_ENABLED:
         await _pay_tinkoff(call, tariff, final_price, promo_code, chat_index, state)
+    elif config.YOOMONEY_ENABLED:
+        await _pay_yoomoney(call, tariff, final_price, promo_code, chat_index, state)
+    elif config.NOWPAYMENTS_ENABLED:
+        await _pay_nowpayments(call, tariff, final_price, promo_code, chat_index, state)
     else:
         await call.answer(
             "Онлайн-оплата временно недоступна. Используйте ручной перевод.",
@@ -325,6 +329,111 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
 
 
 # ─── WEBHOOK для автоматического подтверждения ────────────────────────────────
+
+async def _pay_yoomoney(call: CallbackQuery, tariff, amount: float,
+                        promo_code: str | None, chat_index: int, state: FSMContext):
+    try:
+        payment_db_id = await db.create_payment(
+            user_id=call.from_user.id,
+            tariff_id=tariff["id"],
+            amount=amount,
+            method="yoomoney",
+            promo_code=promo_code,
+            chat_index=chat_index
+        )
+        if promo_code:
+            await db.use_promo(promo_code)
+
+        pay_url = (
+            f"https://yoomoney.ru/quickpay/confirm.xml"
+            f"?receiver={config.YOOMONEY_RECEIVER}"
+            f"&quickpay-form=donate"
+            f"&targets=Подписка+{tariff['name']}"
+            f"&sum={amount:.2f}"
+            f"&label={payment_db_id}"
+        )
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="💳 Перейти к оплате", url=pay_url))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
+
+        await call.message.edit_text(
+            f"💳 <b>Оплата через ЮМани</b>\n\n"
+            f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
+            f"Переведите <b>точную сумму</b> по кнопке ниже.\n"
+            f"Доступ откроется автоматически после получения.",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await call.answer(f"Ошибка: {e}", show_alert=True)
+
+
+async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
+                           promo_code: str | None, chat_index: int, state: FSMContext):
+    try:
+        import aiohttp
+
+        payment_db_id = await db.create_payment(
+            user_id=call.from_user.id,
+            tariff_id=tariff["id"],
+            amount=amount,
+            method="nowpayments",
+            promo_code=promo_code,
+            chat_index=chat_index
+        )
+        if promo_code:
+            await db.use_promo(promo_code)
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.nowpayments.io/v1/invoice",
+                headers={
+                    "x-api-key": config.NOWPAYMENTS_API_KEY,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "price_amount": amount,
+                    "price_currency": "rub",
+                    "order_id": str(payment_db_id),
+                    "order_description": f"Подписка: {tariff['name']}",
+                    "ipn_callback_url": f"{config.WEBHOOK_BASE_URL}/webhook/nowpayments",
+                    "success_url": f"https://t.me/{(await call.bot.get_me()).username}",
+                    "cancel_url": f"https://t.me/{(await call.bot.get_me()).username}",
+                }
+            ) as resp:
+                data = await resp.json()
+
+        pay_url = data.get("invoice_url")
+        if not pay_url:
+            raise Exception(data.get("message", "Нет ссылки от NOWPayments"))
+
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as dbc:
+            await dbc.execute(
+                "UPDATE payments SET external_id=? WHERE id=?",
+                (str(data.get("id")), payment_db_id)
+            )
+            await dbc.commit()
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🪙 Оплатить криптой", url=pay_url))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
+
+        await call.message.edit_text(
+            f"🪙 <b>Оплата криптовалютой</b>\n\n"
+            f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
+            f"Выберите криптовалюту и оплатите по кнопке ниже.\n"
+            f"Доступ откроется автоматически после подтверждения сети.",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await call.answer(f"Ошибка: {e}", show_alert=True)
 
 async def process_payment_confirmed(payment_db_id: int, bot: Bot):
     payment = await db.get_payment(payment_db_id)
