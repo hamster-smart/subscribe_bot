@@ -45,10 +45,24 @@ def currency_kb(tariff_id: int, chat_index: int, currencies: list[str]) -> objec
     ))
     return builder.as_markup()
 
-
 def payment_methods_kb(tariff_id: int, chat_index: int,
                        currency: str, methods: list) -> object:
     builder = InlineKeyboardBuilder()
+    
+    # ЮМани — только для RUB
+    if currency == "RUB" and config.YOOMONEY_ENABLED:
+        builder.row(InlineKeyboardButton(
+            text="💳 ЮМани (онлайн, RUB)",
+            callback_data=f"pay_online_yoomoney:{tariff_id}:{chat_index}"
+        ))
+    
+    # Крипта — для любой валюты
+    if config.NOWPAYMENTS_ENABLED:
+        builder.row(InlineKeyboardButton(
+            text="🪙 Криптовалюта (USDT, BTC...)",
+            callback_data=f"pay_online_nowpayments:{tariff_id}:{chat_index}"
+        ))
+    
     for m in methods:
         builder.row(InlineKeyboardButton(
             text=m["name"],
@@ -59,7 +73,6 @@ def payment_methods_kb(tariff_id: int, chat_index: int,
         callback_data=f"select_tariff_chat:{tariff_id}:{chat_index}"
     ))
     return builder.as_markup()
-
 
 def pay_link_kb(url: str, tariff_id: int, chat_index: int,
                 payment_id: int) -> object:
@@ -160,6 +173,29 @@ async def cb_select_tariff_chat(call: CallbackQuery, state: FSMContext):
         selected_tariff_id=tariff_id,
         final_price=price
     )
+
+@router.callback_query(F.data.startswith("pay_online_yoomoney:"))
+async def cb_pay_yoomoney_flow(call: CallbackQuery, state: FSMContext):
+    _, tariff_id, chat_index = call.data.split(":")
+    tariff_id, chat_index = int(tariff_id), int(chat_index)
+    tariff = await db.get_tariff(tariff_id)
+    data = await state.get_data()
+    final_price = data.get("final_price", tariff["price"])
+    promo_code = data.get("promo_code")
+    from handlers.payment import _pay_yoomoney
+    await _pay_yoomoney(call, tariff, final_price, promo_code, chat_index, state)
+
+
+@router.callback_query(F.data.startswith("pay_online_nowpayments:"))
+async def cb_pay_nowpayments_flow(call: CallbackQuery, state: FSMContext):
+    _, tariff_id, chat_index = call.data.split(":")
+    tariff_id, chat_index = int(tariff_id), int(chat_index)
+    tariff = await db.get_tariff(tariff_id)
+    data = await state.get_data()
+    final_price = data.get("final_price", tariff["price"])
+    promo_code = data.get("promo_code")
+    from handlers.payment import _pay_nowpayments
+    await _pay_nowpayments(call, tariff, final_price, promo_code, chat_index, state)
 
     # ── ПРОБНЫЙ ТАРИФ — сразу выдать доступ ──────────────────────────────────
     if tariff["is_trial"]:
