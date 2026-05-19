@@ -6,6 +6,7 @@ class Config(BaseSettings):
     # ─── BOT ───────────────────────────────────────────────
     BOT_TOKEN: str = "YOUR_BOT_TOKEN"
     ADMIN_IDS: list[int] = [123456789]
+    WEBHOOK_BASE_URL: str = "https://ppyinfo.wondersolution.org" 
 
     # ─── CHANNELS ──────────────────────────────────────────
     CHANNEL_1_ID: int = -1001234567890
