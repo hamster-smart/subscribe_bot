@@ -167,10 +167,11 @@ async def cb_my_subscription(call: CallbackQuery):
         if sub:
             exp = datetime.fromisoformat(sub["expires_at"])
             chat_name = config.get_channel_name(idx)
+            fmt = '%d.%m.%Y %H:%M' if sub['is_trial'] else '%d.%m.%Y'
             lines.append(
                 f"📺 <b>{chat_name}</b>\n"
                 f"  📦 {sub['tariff_name']}\n"
-                f"  📅 До: {exp.strftime('%d.%m.%Y')}\n"
+                f"  📅 До: {exp.strftime(fmt)}\n"
                 f"  ⏳ Осталось: {(exp - datetime.utcnow()).days} дн."
             )
 
