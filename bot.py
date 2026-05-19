@@ -32,11 +32,11 @@ async def main():
 
     # Register routers
     dp.include_router(start.router)
+    dp.include_router(chat_select.router)
     dp.include_router(subscription.router)
     dp.include_router(payment.router)
     dp.include_router(admin.router)
     dp.include_router(settings.router)
-    dp.include_router(chat_select.router)
     dp.include_router(join_request.router)
     dp.include_router(chat_member.router)
     dp.include_router(support.router)
