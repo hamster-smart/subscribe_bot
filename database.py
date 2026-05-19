@@ -185,11 +185,12 @@ async def get_tariffs(chat_index: int | None = None) -> list:
                 return await cur.fetchall()
 
 
-async def get_tariff(tariff_id: int) -> aiosqlite.Row | None:
+async def get_tariff(tariff_id: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM tariffs WHERE id = ?", (tariff_id,)) as cur:
-            return await cur.fetchone()
+            row = await cur.fetchone()
+            return dict(row) if row else None  # ← было: return await cur.fetchone()
 
 
 async def add_tariff(name: str, description: str, days: int, price: float) -> int:
@@ -323,12 +324,12 @@ async def create_payment(user_id: int, tariff_id: int, amount: float,
         return cur.lastrowid
 
 
-async def get_payment(payment_id: int) -> aiosqlite.Row | None:
+async def get_payment(payment_id: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)) as cur:
-            return await cur.fetchone()
-
+            row = await cur.fetchone()
+            return dict(row) if row else None  # ← было: return await cur.fetchone()
 
 async def get_pending_payments() -> list:
     async with aiosqlite.connect(DB_PATH) as db:
