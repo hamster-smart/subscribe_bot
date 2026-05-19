@@ -41,39 +41,37 @@ async def handle_yukassa_webhook(request: Request):
         logger.error(f"YuKassa webhook error: {e}")
     return Response(status_code=200)
 
+
 @app.post("/webhook/yoomoney")
 async def handle_yoomoney_webhook(request: Request):
     try:
-        import hmac
+        import hmac as _hmac
         from urllib.parse import parse_qs
         body = await request.body()
         # ЮМани шлёт form-encoded, не JSON
-        data = {k: v[0] for k, v in parse_qs(body.decode()).items()}
+        data = {k: v[0] for k, v in parse_qs(body.decode(), keep_blank_values=True).items()}
 
-        # Проверка подписи
-        # sha1(type&operation_id&amount&currency&datetime&sender&codepro&secret&label)
-        check_str = "&".join([
-            data.get("notification_type", ""),
-            data.get("operation_id", ""),
-            data.get("amount", ""),
-            data.get("currency", ""),
-            data.get("datetime", ""),
-            data.get("sender", ""),
-            data.get("codepro", ""),
-            config.YOOMONEY_SECRET,
-            data.get("label", ""),
-        ])
-        expected = hashlib.sha1(check_str.encode()).hexdigest()
+        # Проверка подписи HMAC-SHA256.
+        # Все параметры кроме sign/sha1_hash, отсортированные алфавитно,
+        # значения берутся сырыми (URL-encoded) — без декодирования %3A и т.п.
+        pairs = []
+        for part in body.decode().split('&'):
+            if '=' in part:
+                k, v = part.split('=', 1)
+                if k not in ('sign', 'sha1_hash'):
+                    pairs.append((k, v))
+        pairs.sort(key=lambda x: x[0])
+        check_str = '&'.join(f'{k}={v}' for k, v in pairs)
+        expected = _hmac.new(config.YOOMONEY_SECRET.encode(), check_str.encode(), hashlib.sha256).hexdigest()
 
-        # YooMoney в тестовых уведомлениях шлёт поле "sign",
-        # в реальных — "sha1_hash". Поддерживаем оба варианта.
+        # YooMoney шлёт подпись в поле "sign" (в т.ч. тестовые уведомления)
         received = data.get("sha1_hash") or data.get("sign", "")
 
         if not received:
             logger.warning("ЮМани: отсутствует подпись")
             return Response(status_code=401)
 
-        if not hmac.compare_digest(expected, received):
+        if not _hmac.compare_digest(expected, received):
             logger.warning("ЮМани: неверная подпись")
             return Response(status_code=401)
 
@@ -82,11 +80,14 @@ async def handle_yoomoney_webhook(request: Request):
             logger.warning("ЮМани: нет label")
             return Response(status_code=200)
 
+        # Сохраняем withdraw_amount (сумма до комиссии) — именно её сравниваем с ожидаемой
+        withdraw_amount = data.get("withdraw_amount") or data.get("amount")
+
         import aiosqlite
         async with aiosqlite.connect(config.DB_PATH) as dbc:
             await dbc.execute(
                 "UPDATE payments SET paid_amount=? WHERE id=?",
-                (data.get("amount"), int(payment_db_id))
+                (withdraw_amount, int(payment_db_id))
             )
             await dbc.commit()
 
@@ -97,6 +98,7 @@ async def handle_yoomoney_webhook(request: Request):
     except Exception as e:
         logger.error(f"YooMoney webhook error: {e}")
     return Response(status_code=200)
+
 
 @app.post("/webhook/tinkoff")
 async def handle_tinkoff_webhook(request: Request):
@@ -123,6 +125,7 @@ async def handle_tinkoff_webhook(request: Request):
     except Exception as e:
         logger.error(f"Tinkoff webhook error: {e}")
     return Response(status_code=200)
+
 
 @app.post("/webhook/nowpayments")
 async def handle_nowpayments_webhook(request: Request):
