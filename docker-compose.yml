@@ -11,15 +11,16 @@ services:
       - webhook
     networks:
       - vipsub
+      - caddy-proxy
 
   webhook:
     build: .
     container_name: vipsub_webhook
     restart: unless-stopped
     env_file: .env
-    command: uvicorn webhook_server:app --host 0.0.0.0 --port 8000
+    command: uvicorn webhook_server:app --host 0.0.0.0 --port 8080
     ports:
-      - "8000:8000"             # если nginx нет — открыть напрямую
+      - "127.0.0.1:8080:8080"             # если nginx/Caddy нет — открыть напрямую
     volumes:
       - ./data:/app/data
     networks:
@@ -28,3 +29,6 @@ services:
 networks:
   vipsub:
     driver: bridge
+  caddy-proxy:
+    name: caddy-proxy
+    external: true
