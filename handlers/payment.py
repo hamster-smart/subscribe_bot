@@ -186,7 +186,7 @@ async def cb_pay_online(call: CallbackQuery, state: FSMContext):
         await _grant_free_access(call, state, tariff)
         return
 
-     if config.YUKASSA_ENABLED:
+    if config.YUKASSA_ENABLED:
         await _pay_yukassa(call, tariff, final_price, promo_code, chat_index, state)
     elif config.TINKOFF_ENABLED:
         await _pay_tinkoff(call, tariff, final_price, promo_code, chat_index, state)
