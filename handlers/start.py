@@ -134,8 +134,9 @@ async def cmd_start(message: Message, state: FSMContext):
         if sub:
             exp = datetime.fromisoformat(sub["expires_at"])
             chat_name = config.get_channel_name(idx)
-            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime('%d.%m.%Y')}")
-
+            fmt = '%d.%m.%Y %H:%M' if sub['is_trial'] else '%d.%m.%Y'
+            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime(fmt)}")
+            
     text = welcome + ("\n\n" + "\n".join(lines) if lines else "")
     await message.answer(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
@@ -152,8 +153,9 @@ async def cb_main_menu(call: CallbackQuery):
         if sub:
             exp = datetime.fromisoformat(sub["expires_at"])
             chat_name = config.get_channel_name(idx)
-            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime('%d.%m.%Y')}")
-
+            fmt = '%d.%m.%Y %H:%M' if sub['is_trial'] else '%d.%m.%Y'
+            lines.append(f"✅ <b>{chat_name}</b>: до {exp.strftime(fmt)}")
+            
     text = welcome + ("\n\n" + "\n".join(lines) if lines else "")
     await call.message.edit_text(text, reply_markup=main_menu_kb(support == "1"), parse_mode="HTML")
 
