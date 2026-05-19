@@ -327,11 +327,23 @@ async def _pay_tinkoff(call: CallbackQuery, tariff, amount: float,
 # ─── WEBHOOK для автоматического подтверждения ────────────────────────────────
 
 async def process_payment_confirmed(payment_db_id: int, bot: Bot):
-    """Вызывается вебхуком после успешной онлайн-оплаты."""
     payment = await db.get_payment(payment_db_id)
     if not payment or payment["status"] == "confirmed":
         return
 
+    # Проверка суммы для ЮМани и NOWPayments
+    if payment["method"] in ("yoomoney", "nowpayments"):
+        paid_amount = payment.get("paid_amount")  # сохраняем из вебхука
+        if paid_amount and float(paid_amount) < float(payment["amount"]) * 0.99:
+            # Недоплата больше 1% — не подтверждаем
+            await bot.send_message(
+                payment["user_id"],
+                f"⚠️ Оплата получена, но сумма не совпадает.\n"
+                f"Ожидалось: {payment['amount']:.0f} ₽, получено: {float(paid_amount):.0f} ₽\n"
+                f"Обратитесь в поддержку.",
+            )
+            return
+    
     await db.confirm_payment(payment_db_id, admin_id=0)
     tariff = await db.get_tariff(payment["tariff_id"])
 
