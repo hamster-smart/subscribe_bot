@@ -396,7 +396,7 @@ async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
                 },
                 json={
                     "price_amount": amount,
-                    "price_currency": "rub",
+                    "price_currency": tariff.get("currency", "RUB").lower(),
                     "order_id": str(payment_db_id),
                     "order_description": f"Подписка: {tariff['name']}",
                     "ipn_callback_url": f"{config.WEBHOOK_BASE_URL}/webhook/nowpayments",
