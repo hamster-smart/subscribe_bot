@@ -130,6 +130,7 @@ async def init_db():
             "ALTER TABLE promo_codes ADD COLUMN tariff_id INTEGER DEFAULT NULL",
             "ALTER TABLE promo_codes ADD COLUMN chat_index INTEGER DEFAULT NULL",
             "ALTER TABLE promo_codes ADD COLUMN max_uses_per_user INTEGER DEFAULT 1",
+            "ALTER TABLE payments ADD COLUMN paid_amount REAL DEFAULT NULL",
         ]
         for sql in migrations:
             try:
