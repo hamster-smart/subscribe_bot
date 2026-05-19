@@ -40,7 +40,7 @@ async def handle_yukassa_webhook(request: Request):
         finally:
             await bot.session.close()
     except Exception as e:
-       logger.error(f"YooMoney webhook error: {e}")
+        logger.error(f"YooMoney webhook error: {e}")
     return Response(status_code=200)
 
 
@@ -99,7 +99,7 @@ async def handle_yoomoney_webhook(request: Request):
         finally:
             await bot.session.close()
     except Exception as e:
-       logger.error(f"YooMoney webhook error: {e}")
+        logger.error(f"YooMoney webhook error: {e}")
     return Response(status_code=200)
 
 
@@ -128,7 +128,7 @@ async def handle_tinkoff_webhook(request: Request):
         finally:
             await bot.session.close()
     except Exception as e:
-       logger.error(f"YooMoney webhook error: {e}")
+        logger.error(f"YooMoney webhook error: {e}")
     return Response(status_code=200)
 
 
@@ -168,5 +168,5 @@ async def handle_nowpayments_webhook(request: Request):
         finally:
             await bot.session.close()
     except Exception as e:
-       logger.error(f"YooMoney webhook error: {e}")
+        logger.error(f"YooMoney webhook error: {e}")
     return Response(status_code=200)
