@@ -10,6 +10,7 @@ from keyboards.inline import (
     admin_tariffs_kb, tariff_edit_kb, promos_kb, cancel_kb
 )
 from services.channel import grant_access, kick_user, mute_user
+from datetime import datetime
 
 router = Router()
 
@@ -56,11 +57,12 @@ async def cb_admin_stats(call: CallbackQuery):
         pending = (await (await dbc.execute(
             "SELECT COUNT(*) as c FROM payments WHERE status='pending'"
         )).fetchone())["c"]
-        # выручка по валютам — всего
+       # выручка по валютам — текущий месяц
         async with dbc.execute(
             "SELECT COALESCE(p.currency, pm.currency, 'RUB') as cur, COALESCE(SUM(p.amount),0) as s "
             "FROM payments p LEFT JOIN payment_methods pm ON p.payment_method_id=pm.id "
             "WHERE p.status='confirmed' "
+            "AND strftime('%Y-%m', p.confirmed_at) = strftime('%Y-%m', 'now') "
             "GROUP BY COALESCE(p.currency, pm.currency, 'RUB') ORDER BY cur"
         ) as _cur:
             revenue_rows = await _cur.fetchall()
@@ -89,7 +91,7 @@ async def cb_admin_stats(call: CallbackQuery):
         f"👥 <b>Пользователей:</b> {total_users}\n"
         f"<b>{chat1_name}:</b> {chat1_cnt}\n"
         f"<b>{chat2_name}:</b> {chat2_cnt}\n\n"
-        "💰 <b>Выручка всего:</b>\n"
+        f"💰 <b>Выручка за {datetime.now().strftime('%B %Y')}:</b>\n"
         + "\n".join(
             f"  {CURRENCY_SYMBOLS.get(r['cur'], r['cur'])} {r['s']:.0f} {r['cur']}"
             for r in revenue_rows
