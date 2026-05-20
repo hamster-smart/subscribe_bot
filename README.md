@@ -1,144 +1,241 @@
-# 🤖 VIPSub Bot — Бот управления подписками
+# VIPSub Bot
 
-Telegram-бот для организации платного доступа (VIP-подписок) к закрытому каналу или группе.
+Telegram bot for selling and managing paid subscriptions to private channels or groups.
 
-## 📦 Функционал
+The bot supports manual and automatic payments, promo codes, subscription reminders, admin moderation, and access management for multiple chats.
 
-### Для пользователей
-- 📋 Просмотр тарифов с ценами
-- 💳 Оплата вручную (скриншот → подтверждение администратором)
-- 🏦 Автоматическая оплата через **ЮКассу** или **Тинькофф**
-- 🎟 Промокоды (скидка % или рублями)
-- 👤 Просмотр своей активной подписки и срока
-- ⏰ Напоминания за 3 дня и 1 день до истечения
+## Features
 
-### Для администраторов (`/admin`)
-- 📊 Статистика: пользователи, выручка, активные подписки
-- ⏳ Очередь ожидающих подтверждения (ручные оплаты)
-- ✅ Подтверждение / ❌ Отклонение оплаты одной кнопкой
-- 👥 Список активных подписчиков
-- 📢 Рассылка всем пользователям (текст, фото, видео)
-- 🎟 Создание промокодов
-- 📋 Управление тарифами (вкл/выкл, добавить)
-- ⚙️ Настройки: **мьют** или **кик** при истечении подписки
-- ✏️ Редактирование реквизитов и приветственного текста прямо в боте
+### User features
 
----
+- View available tariffs and prices
+- Buy access with manual payment and screenshot confirmation
+- Pay online via YooMoney, YooKassa, Tinkoff, or NOWPayments
+- Apply promo codes, including 100% discount promo codes
+- Instantly receive access after successful payment
+- View current subscription and expiration date
+- Receive renewal reminders before subscription expiry
 
-## 🚀 Установка
+### Admin features
 
-### 1. Клонировать / распаковать проект
+- Admin panel with statistics
+- Pending payments queue for manual confirmations
+- One-click payment confirmation or rejection
+- Export active subscribers by chat to Excel
+- User lookup by Telegram ID, username, or name
+- Grant, extend, revoke, or reset subscriptions manually
+- Ban and unban users
+- Broadcast text, photo, or video messages to all users
+- Create and manage promo codes
+- Create, edit, enable, disable, and delete tariffs
+- Manage payment methods and bot settings from Telegram
+- Notifications about new paid subscriptions
 
-```bash
-cd vipsub_bot
+## Supported payment methods
+
+- Manual bank card / bank transfer
+- YooKassa
+- Tinkoff
+- YooMoney
+- NOWPayments (crypto)
+
+## Tech stack
+
+- Python
+- aiogram
+- SQLite
+- aiosqlite
+- openpyxl
+- Uvicorn / FastAPI-style webhook server for payment callbacks
+
+## Project structure
+
+```text
+subscribe_bot/
+├── bot.py
+├── config.py
+├── database.py
+├── webhook_server.py
+├── handlers/
+│   ├── start.py
+│   ├── subscription.py
+│   ├── payment.py
+│   ├── admin.py
+│   └── settings.py
+├── keyboards/
+│   └── inline.py
+├── services/
+│   ├── channel.py
+│   └── scheduler.py
+├── data/
+│   └── vipsub.db
+├── requirements.txt
+└── .env.example
 ```
 
-### 2. Установить зависимости
+## Installation
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/hamster-smart/subscribe_bot.git
+cd subscribe_bot
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python -m venv venv
+source venv/bin/activate
+```
+
+On Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Настроить `.env`
+### 4. Configure environment variables
 
 ```bash
 cp .env.example .env
-nano .env   # или любой редактор
+nano .env
 ```
 
-Обязательно заполнить:
-- `BOT_TOKEN` — токен от [@BotFather](https://t.me/BotFather)
-- `ADMIN_IDS` — список Telegram ID администраторов (узнать у [@userinfobot](https://t.me/userinfobot))
-- `CHANNEL_ID` — ID закрытого канала/группы (добавить бота в канал как администратора!)
+Set the required values:
 
-### 4. Добавить бота в канал как администратора
+- `BOT_TOKEN` — Telegram bot token from [@BotFather](https://t.me/BotFather)
+- `ADMIN_IDS` — comma-separated Telegram user IDs of bot admins
+- `DB_PATH` — path to SQLite database file
+- Channel / chat configuration values
+- Payment provider credentials you want to use
+- Webhook base URL for payment callbacks
 
-Бот должен иметь права:
-- **Добавлять участников** (для invite-ссылок)
-- **Ограничивать участников** (для мьюта/кика)
+## Basic setup
 
-### 5. Запустить
+### 1. Add the bot to your private channel or group as administrator
+
+The bot should have permission to:
+
+- invite users
+- manage invite links
+- restrict or remove users if you use mute/kick logic
+
+### 2. Start the bot
 
 ```bash
 python bot.py
 ```
 
----
+### 3. Start the webhook server
 
-## 💳 Платёжные системы
-
-### Ручная оплата (работает сразу)
-Пользователь видит реквизиты → переводит деньги → отправляет скриншот → 
-администратор подтверждает одной кнопкой → бот выдаёт доступ.
-
-### ЮКасса (автоматическая)
-1. Зарегистрировать магазин на [yookassa.ru](https://yookassa.ru)
-2. В `.env` указать `YUKASSA_SHOP_ID` и `YUKASSA_SECRET_KEY`
-3. Установить `YUKASSA_ENABLED=true`
-4. В настройках ЮКассы прописать вебхук: `https://ВАШ_ДОМЕН/webhook/yukassa`
-5. Запустить `webhook_server.py` (отдельным процессом):
-   ```bash
-   uvicorn webhook_server:app --host 0.0.0.0 --port 8000
-   ```
-
-### Тинькофф (автоматическая)
-1. Получить Terminal Key и Secret в личном кабинете Tinkoff Business
-2. В `.env` указать `TINKOFF_TERMINAL_KEY` и `TINKOFF_SECRET_KEY`
-3. Установить `TINKOFF_ENABLED=true`
-4. Прописать вебхук: `https://ВАШ_ДОМЕН/webhook/tinkoff`
-
----
-
-## ⚙️ Структура проекта
-
-```
-vipsub_bot/
-├── bot.py                  # Точка входа
-├── config.py               # Все настройки
-├── database.py             # SQLite, все модели и запросы
-├── webhook_server.py       # Сервер для вебхуков платёжных систем
-├── handlers/
-│   ├── start.py            # /start, главное меню, моя подписка
-│   ├── subscription.py     # Тарифы, промокоды
-│   ├── payment.py          # Ручная и онлайн оплата
-│   ├── admin.py            # Панель администратора
-│   └── settings.py         # Настройки бота
-├── keyboards/
-│   └── inline.py           # Все inline-клавиатуры
-├── services/
-│   ├── channel.py          # Управление доступом к каналу
-│   └── scheduler.py        # Планировщик (истечения, напоминания)
-├── data/
-│   └── vipsub.db           # SQLite база (создаётся автоматически)
-├── requirements.txt
-└── .env.example
+```bash
+uvicorn webhook_server:app --host 0.0.0.0 --port 8080
 ```
 
----
+## Payment providers setup
 
-## 🗄 База данных
+### YooKassa
 
-| Таблица | Описание |
-|---|---|
-| `users` | Все пользователи бота |
-| `tariffs` | Тарифы (название, дни, цена) |
-| `subscriptions` | Подписки пользователей |
-| `payments` | Платежи (статус, метод, скриншот) |
-| `promo_codes` | Промокоды и их использование |
-| `bot_settings` | Настройки (действие при истечении, тексты) |
+Set these variables in `.env`:
 
----
+- `YUKASSA_ENABLED=true`
+- `YUKASSA_SHOP_ID=...`
+- `YUKASSA_SECRET_KEY=...`
 
-## 🔧 Частые вопросы
+Webhook URL:
 
-**Бот не может создать invite-ссылку?**  
-Убедитесь, что бот — администратор канала с правом "Добавлять участников".
+```text
+https://your-domain.com/webhook/yukassa
+```
 
-**Как узнать CHANNEL_ID?**  
-Добавьте [@userinfobot](https://t.me/userinfobot) в канал, напишите любое сообщение, скопируйте ID.
+### Tinkoff
 
-**Как добавить нового администратора?**  
-В `.env` добавьте его Telegram ID в список `ADMIN_IDS`.
+Set these variables in `.env`:
 
-**Как изменить тарифы?**  
-Через `/admin` → Настройки → Тарифы. Или напрямую в SQLite.
+- `TINKOFF_ENABLED=true`
+- `TINKOFF_TERMINAL_KEY=...`
+- `TINKOFF_SECRET_KEY=...`
+
+Webhook URL:
+
+```text
+https://your-domain.com/webhook/tinkoff
+```
+
+### YooMoney
+
+Set these variables in `.env`:
+
+- `YOOMONEY_ENABLED=true`
+- `YOOMONEY_RECEIVER=...`
+
+Webhook URL:
+
+```text
+https://your-domain.com/webhook/yoomoney
+```
+
+### NOWPayments
+
+Set these variables in `.env`:
+
+- `NOWPAYMENTS_ENABLED=true`
+- `NOWPAYMENTS_API_KEY=...`
+
+Webhook URL:
+
+```text
+https://your-domain.com/webhook/nowpayments
+```
+
+## Database
+
+SQLite is used as the main database.
+
+Main tables include:
+
+- `users`
+- `tariffs`
+- `subscriptions`
+- `payments`
+- `promocodes`
+- `paymentmethods`
+- `botsettings`
+
+## Admin panel
+
+Open the admin panel with:
+
+```text
+/admin
+```
+
+From the admin panel you can:
+
+- review statistics
+- confirm or reject manual payments
+- export subscribers
+- search for users
+- manage subscriptions
+- send broadcasts
+- manage promo codes
+- edit tariffs
+- manage payment methods and settings
+
+## Notes
+
+- The bot can work with multiple chats/channels
+- Trial tariffs can be handled separately from paid tariffs
+- Access can be granted automatically after successful payment
+- Manual payments can be confirmed from the admin panel with screenshot review
+
+## License
+
+Add your preferred license here.
