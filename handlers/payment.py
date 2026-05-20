@@ -348,7 +348,7 @@ async def _pay_yoomoney(call: CallbackQuery, tariff, amount: float,
             f"https://yoomoney.ru/quickpay/confirm.xml"
             f"?receiver={config.YOOMONEY_RECEIVER}"
             f"&quickpay-form=donate"
-            f"&targets=Подписка+{tariff['name']}"
+            f"&targets={quote('Подписка ' + tariff['name'])}" 
             f"&sum={amount:.2f}"
             f"&label={payment_db_id}"
         )
