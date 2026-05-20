@@ -3,6 +3,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 import database as db
 from config import config
