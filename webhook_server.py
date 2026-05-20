@@ -182,7 +182,7 @@ async def handle_nowpayments_webhook(request: Request):
         finally:
             await bot.session.close()
 
-   except Exception as e:
-       logger.exception(f"NOWPayments webhook error: {e}")
+    except Exception as e:
+        logger.exception(f"NOWPayments webhook error: {e}")
 
     return Response(status_code=200)
