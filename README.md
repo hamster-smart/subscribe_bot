@@ -238,4 +238,5 @@ From the admin panel you can:
 
 ## License
 
-Add your preferred license here.
+This project is licensed under the [MIT License](./LICENSE).  
+See the [LICENSE](./LICENSE) file for details.
