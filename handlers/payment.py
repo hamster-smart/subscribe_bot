@@ -476,7 +476,7 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
         f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
         parse_mode="HTML"
     )
-        # ─── Уведомление администраторам ──────────────────────────
+     # ─── Уведомление администраторам ──────────────────────────
     if not tariff.get("is_trial"):
         import aiosqlite
         async with aiosqlite.connect(config.DB_PATH) as dbc:
