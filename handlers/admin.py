@@ -184,6 +184,32 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
         await call.message.edit_text(call.message.text + suffix, parse_mode="HTML")
     await call.answer("✅ Подтверждено!", show_alert=False)
 
+       # ─── Уведомление администраторам о ручном подтверждении ──
+    if not tariff.get("is_trial"):
+        currency_symbols = {"RUB": "₽", "EUR": "€", "USD": "$"}
+        currency = payment.get("currency") or tariff.get("currency") or "RUB"
+        symbol = currency_symbols.get(currency, currency)
+        chat_name = config.get_channel_name(chat_index)
+        username = payment.get("username")
+        full_name = payment.get("full_name") or str(payment["user_id"])
+
+        admin_text = (
+            f"🆕 <b>Новая подписка!</b>\n\n"
+            f"👤 {full_name}"
+            + (f" (@{username})" if username else "")
+            + f"\n🆔 <code>{payment['user_id']}</code>\n"
+            f"📦 Тариф: {tariff['name']}\n"
+            f"📺 Канал: {chat_name}\n"
+            f"💵 Сумма: <b>{payment['amount']:.0f} {symbol}</b>\n"
+            f"💳 Метод: Ручной перевод\n"
+            f"📅 До: {expires.strftime('%d.%m.%Y')}"
+        )
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, admin_text, parse_mode="HTML")
+            except Exception:
+                pass
+
 
 @router.callback_query(F.data.startswith("admin_reject"))
 async def cb_admin_reject(call: CallbackQuery, bot: Bot):
