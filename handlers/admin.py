@@ -184,14 +184,22 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
         await call.message.edit_text(call.message.text + suffix, parse_mode="HTML")
     await call.answer("✅ Подтверждено!", show_alert=False)
 
-       # ─── Уведомление администраторам о ручном подтверждении ──
+      # ─── Уведомление администраторам о ручном подтверждении ──
     if not tariff.get("is_trial"):
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as dbc:
+            dbc.row_factory = aiosqlite.Row
+            async with dbc.execute(
+                "SELECT username, full_name FROM users WHERE user_id = ?",
+                (payment["user_id"],)
+            ) as cur:
+                user_row = await cur.fetchone()
+
+        username = user_row["username"] if user_row and user_row["username"] else None
+        full_name = user_row["full_name"] if user_row else str(payment["user_id"])
         currency_symbols = {"RUB": "₽", "EUR": "€", "USD": "$"}
-        currency = payment.get("currency") or tariff.get("currency") or "RUB"
         symbol = currency_symbols.get(currency, currency)
         chat_name = config.get_channel_name(chat_index)
-        username = payment.get("username")
-        full_name = payment.get("full_name") or str(payment["user_id"])
 
         admin_text = (
             f"🆕 <b>Новая подписка!</b>\n\n"
