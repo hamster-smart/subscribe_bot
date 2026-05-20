@@ -136,28 +136,42 @@ async def handle_tinkoff_webhook(request: Request):
 async def handle_nowpayments_webhook(request: Request):
     try:
         import hmac as _hmac
-        body = await request.read()
+        body = await request.body()
         sig = request.headers.get("x-nowpayments-sig", "")
+
         expected = _hmac.new(
             config.NOWPAYMENTS_IPN_SECRET.encode(),
             body,
             hashlib.sha512
         ).hexdigest()
+
         if not _hmac.compare_digest(sig, expected):
             logger.warning("NOWPayments: неверная подпись")
             return Response(status_code=401)
+
         data = json.loads(body)
+
         if data.get("payment_status") not in ("finished", "confirmed"):
             return Response(status_code=200)
+
         payment_db_id = data.get("order_id")
         if not payment_db_id:
             logger.warning("NOWPayments: нет order_id")
             return Response(status_code=200)
+
+        paid_amount = (
+            data.get("actually_paid_at_fiat")
+            or data.get("price_amount")
+            or data.get("pay_amount")
+            or data.get("actually_paid")
+            or 0
+        )
+
         import aiosqlite
         async with aiosqlite.connect(config.DB_PATH) as dbc:
             await dbc.execute(
                 "UPDATE payments SET paid_amount=? WHERE id=?",
-                (data.get("actually_paid"), int(payment_db_id))
+                (paid_amount, int(payment_db_id))
             )
             await dbc.commit()
 
@@ -167,6 +181,8 @@ async def handle_nowpayments_webhook(request: Request):
             await process_payment_confirmed(int(payment_db_id), bot)
         finally:
             await bot.session.close()
-    except Exception as e:
-        logger.error(f"YooMoney webhook error: {e}")
+
+   except Exception as e:
+       logger.exception(f"NOWPayments webhook error: {e}")
+
     return Response(status_code=200)
