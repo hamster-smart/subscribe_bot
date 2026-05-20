@@ -476,3 +476,37 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
         f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
         parse_mode="HTML"
     )
+        # ─── Уведомление администраторам ──────────────────────────
+    if not tariff.get("is_trial"):
+        import aiosqlite
+        async with aiosqlite.connect(config.DB_PATH) as dbc:
+            dbc.row_factory = aiosqlite.Row
+            async with dbc.execute(
+                "SELECT username, full_name FROM users WHERE user_id = ?",
+                (payment["user_id"],)
+            ) as cur:
+                user_row = await cur.fetchone()
+
+        username = user_row["username"] if user_row and user_row["username"] else None
+        full_name = user_row["full_name"] if user_row else str(payment["user_id"])
+        chat_name = config.get_channel_name(chat_index)
+        currency = tariff.get("currency") or "RUB"
+        currency_symbols = {"RUB": "₽", "EUR": "€", "USD": "$"}
+        symbol = currency_symbols.get(currency, currency)
+
+        admin_text = (
+            f"🆕 <b>Новая подписка!</b>\n\n"
+            f"👤 {full_name}"
+            + (f" (@{username})" if username else "")
+            + f"\n🆔 <code>{payment['user_id']}</code>\n"
+            f"📦 Тариф: <b>{tariff['name']}</b>\n"
+            f"📺 Канал: {chat_name}\n"
+            f"💵 Сумма: <b>{payment['amount']:.0f} {symbol}</b>\n"
+            f"💳 Метод: {payment['method']}\n"
+            f"📅 До: {expires.strftime('%d.%m.%Y')}"
+        )
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, admin_text, parse_mode="HTML")
+            except Exception:
+                pass
