@@ -4,6 +4,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
 from urllib.parse import quote
+import logging
+logger = logging.getLogger(__name__)
 
 import database as db
 from config import config
@@ -469,14 +471,17 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
     link = await grant_access(bot, payment["user_id"], chat_index)
     expires = datetime.utcnow() + timedelta(days=tariff["days"])
 
-    await bot.send_message(
-        payment["user_id"],
-        f"✅ <b>Оплата подтверждена!</b>\n\n"
-        f"📦 Тариф: {tariff['name']}\n"
-        f"🔗 Ссылка на канал: {link}\n"
-        f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
-        parse_mode="HTML"
-    )
+    try:
+        await bot.send_message(
+            payment["user_id"],
+            f"✅ <b>Оплата подтверждена!</b>\\n\\n"
+            f"📦 Тариф: {tariff['name']}\\n"
+            f"🔗 Ссылка на канал: {link}\\n"
+            f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.warning(f"Cannot notify user {payment['user_id']}: {e}")
      # ─── Уведомление администраторам ──────────────────────────
     if not tariff.get("is_trial"):
         import aiosqlite
