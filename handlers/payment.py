@@ -474,14 +474,15 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
     try:
         await bot.send_message(
             payment["user_id"],
-            f"✅ <b>Оплата подтверждена!</b>\\n\\n"
-            f"📦 Тариф: {tariff['name']}\\n"
-            f"🔗 Ссылка на канал: {link}\\n"
+            f"✅ <b>Оплата подтверждена!</b>\n\n"
+            f"📦 Тариф: {tariff['name']}\n"
+            f"🔗 Ссылка на канал: {link}\n"
             f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
             parse_mode="HTML"
         )
     except Exception as e:
         logger.warning(f"Cannot notify user {payment['user_id']}: {e}")
+        
      # ─── Уведомление администраторам ──────────────────────────
     if not tariff.get("is_trial"):
         import aiosqlite
