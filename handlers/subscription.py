@@ -152,6 +152,40 @@ async def handle_promo_input(message: Message, state: FSMContext):
                     parse_mode="HTML"
                 )
                 await state.clear()
+                
+                # ─── Уведомление администраторам ──────────────────────────
+                if not tariff.get("is_trial"):
+                    import aiosqlite
+                    async with aiosqlite.connect(config.DB_PATH) as dbc:
+                        dbc.row_factory = aiosqlite.Row
+                        async with dbc.execute(
+                            "SELECT username, full_name FROM users WHERE user_id = ?",
+                            (message.from_user.id,)
+                        ) as cur:
+                            user_row = await cur.fetchone()
+
+                    username = user_row["username"] if user_row and user_row["username"] else None
+                    full_name = user_row["full_name"] if user_row else str(message.from_user.id)
+                    currency = tariff.get("currency") or "RUB"
+                    currency_symbols = {"RUB": "₽", "EUR": "€", "USD": "$"}
+                    symbol = currency_symbols.get(currency, currency)
+
+                    admin_text = (
+                        f"🆕 <b>Новая подписка!</b>\n\n"
+                        f"👤 {full_name}"
+                        + (f" (@{username})" if username else "")
+                        + f"\n🆔 <code>{message.from_user.id}</code>\n"
+                        f"📦 Тариф: <b>{tariff['name']}</b>\n"
+                        f"📺 Канал: {chat_name}\n"
+                        f"💵 Сумма: <b>0 {symbol}</b>\n"
+                        f"🎟 Промокод: {code}\n"
+                        f"📅 До: {expires.strftime('%d.%m.%Y')}"
+                    )
+                    for admin_id in config.ADMIN_IDS:
+                        try:
+                            await message.bot.send_message(admin_id, admin_text, parse_mode="HTML")
+                        except Exception:
+                            pass
                 return
 
             # Частичная скидка — к методам оплаты
