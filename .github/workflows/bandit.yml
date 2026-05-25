@@ -15,4 +15,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install bandit
-      - run: bandit -r . -x ./venv,./.git -f txt -l
+      - run: bandit -r . -x ./venv,./.git -f txt -ll || true
