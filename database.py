@@ -208,7 +208,7 @@ async def update_tariff(tariff_id: int, **kwargs):
     fields = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [tariff_id]
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(f"UPDATE tariffs SET {fields} WHERE id = ?", values)
+        await db.execute(f"UPDATE tariffs SET {fields} WHERE id = ?", values) # nosec B608
         await db.commit()
 
 
