@@ -97,7 +97,7 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
         f"💰 Сумма: <b>{final_price:.0f} ₽</b>\n\n"
         f"<b>Реквизиты для перевода:</b>\n"
         f"{payment_details}\n\n"
-        f"После оплаты нажмите кнопку ниже и отправьте квитанцию/скриншот."
+        f"После оплаты ОБЯЗАТЕЛЬНО нажмите кнопку ниже и отправьте квитанцию/скриншот."
     )
     await state.update_data(current_payment_id=payment_id)
     await call.message.edit_text(text, reply_markup=manual_payment_kb(payment_id), parse_mode="HTML")
@@ -386,6 +386,7 @@ async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
             method="nowpayments",
             promo_code=promo_code,
             chat_index=chat_index
+            currency=tariff.get("currency", "RUB")
         )
         if promo_code:
             await db.use_promo(promo_code)
