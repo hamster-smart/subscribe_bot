@@ -385,7 +385,7 @@ async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
             amount=amount,
             method="nowpayments",
             promo_code=promo_code,
-            chat_index=chat_index
+            chat_index=chat_index,
             currency=tariff.get("currency", "RUB")
         )
         if promo_code:
