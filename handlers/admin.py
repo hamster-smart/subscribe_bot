@@ -55,7 +55,7 @@ async def cb_admin_stats(call: CallbackQuery):
         dbc.row_factory = aiosqlite.Row
         total_users = (await (await dbc.execute("SELECT COUNT(*) as c FROM users")).fetchone())["c"]
         pending = (await (await dbc.execute(
-            "SELECT COUNT(*) as c FROM payments WHERE status='pending'"
+            "SELECT COUNT(*) as c FROM payments WHERE status='pending' AND method LIKE 'manual%'"
         )).fetchone())["c"]
        # выручка по валютам — текущий месяц
         async with dbc.execute(
