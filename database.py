@@ -341,6 +341,7 @@ async def get_pending_payments() -> list:
             JOIN users u ON u.user_id = p.user_id
             JOIN tariffs t ON t.id = p.tariff_id
             WHERE p.status = 'pending'
+              AND p.method LIKE 'manual%'
             ORDER BY p.created_at DESC
         """) as cur:
             return await cur.fetchall()
