@@ -171,7 +171,8 @@ async def cb_admin_confirm(call: CallbackQuery, bot: Bot):
             f"📦 <b>{tariff['name']}</b>\n"
             f"💰 {amount_str}\n"
             f"🔗 {link}\n"
-            f"📅 До: <b>{expires.strftime('%d.%m.%Y')}</b>",
+            f"📅 До: <b>{expires.strftime('%d.%m.%Y')}</b>\n\n"
+            f"👉 Перейдите по ссылке в чат и нажмите кнопку «Подать заявку на вступление...».",
             parse_mode="HTML"
         )
     except Exception:
