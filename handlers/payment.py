@@ -52,7 +52,8 @@ async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dic
         f"🎉 <b>Промокод активирован — доступ открыт!</b>\n\n"
         f"📦 Тариф: <b>{tariff['name']}</b>\n"
         f"🔗 Ссылка для входа: {link}\n"
-        f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
+        f"📅 Действует до: {expires.strftime('%d.%m.%Y')}\n\n"
+        f"👉 Перейдите по ссылке выше, откройте чат и нажмите кнопку «Подать заявку на вступление...».",
         parse_mode="HTML"
     )
     await state.clear()
@@ -97,7 +98,7 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
         f"💰 Сумма: <b>{final_price:.0f} ₽</b>\n\n"
         f"<b>Реквизиты для перевода:</b>\n"
         f"{payment_details}\n\n"
-        f"После оплаты ОБЯЗАТЕЛЬНО нажмите кнопку ниже и отправьте квитанцию/скриншот."
+        f"После оплаты <b>ОБЯЗАТЕЛЬНО</b> нажмите кнопку ниже и отправьте квитанцию/скриншот."
     )
     await state.update_data(current_payment_id=payment_id)
     await call.message.edit_text(text, reply_markup=manual_payment_kb(payment_id), parse_mode="HTML")
@@ -109,7 +110,7 @@ async def cb_send_screenshot(call: CallbackQuery, state: FSMContext):
     await state.update_data(current_payment_id=payment_id)
     await state.set_state(PaymentState.waiting_screenshot)
     await call.message.edit_text(
-        "📷 ОБЯЗАТЕЛЬНО пришлите квитанцию/скриншот оплаты (фото):",
+        "📷 <b>ОБЯЗАТЕЛЬНО</b> пришлите квитанцию/скриншот оплаты (фото):",
         reply_markup=back_kb("main_menu")
     )
 
@@ -366,8 +367,8 @@ async def _pay_yoomoney(call: CallbackQuery, tariff, amount: float,
             f"💳 <b>Оплата через ЮМани</b>\n\n"
             f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
             f"Переведите <b>точную сумму</b> по кнопке ниже.\n"
-            f"Доступ откроется автоматически после получения.\n"
-            f"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку \"подать заявку...\".",
+            f"Доступ откроется автоматически после получения.\n\n"
+            f<i>"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку «Подать заявку...»."</i>,
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -433,8 +434,8 @@ async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
             f"🪙 <b>Оплата криптовалютой</b>\n\n"
             f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
             f"Выберите криптовалюту и оплатите по кнопке ниже.\n"
-            f"Доступ откроется автоматически после подтверждения сети.\n"
-            f"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку \"подать заявку...\".",
+            f"Доступ откроется автоматически после подтверждения сети.\n\n"
+            f<i>"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку «подать заявку...»."</i>,
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -480,7 +481,8 @@ async def process_payment_confirmed(payment_db_id: int, bot: Bot):
             f"✅ <b>Оплата подтверждена!</b>\n\n"
             f"📦 Тариф: {tariff['name']}\n"
             f"🔗 Ссылка на канал: {link}\n"
-            f"📅 Действует до: {expires.strftime('%d.%m.%Y')}",
+            f"📅 Действует до: {expires.strftime('%d.%m.%Y')}\n\n"
+            f"👉 Перейдите по ссылке в чат и снова нажмите кнопку «Подать заявку на вступление...».",
             parse_mode="HTML"
         )
     except Exception as e:
