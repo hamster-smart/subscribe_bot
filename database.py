@@ -480,7 +480,7 @@ async def get_stats() -> dict:
             "SELECT COALESCE(SUM(amount), 0) as s FROM payments WHERE status='confirmed' AND date(confirmed_at)=date('now')"
         )).fetchone())["s"]
         pending_count = (await (await db.execute(
-            "SELECT COUNT(*) as c FROM payments WHERE status='pending'"
+            "SELECT COUNT(*) as c FROM payments WHERE status='pending' AND method LIKE 'manual%'"
         )).fetchone())["c"]
         return {
             "total_users": total_users,
