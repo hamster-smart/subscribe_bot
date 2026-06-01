@@ -231,7 +231,8 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"📦 {tariff['name']} → {chat_name}\n"
             f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
             f"Нажмите кнопку для перехода к оплате.\n"
-            f"После оплаты вернитесь и отправьте квитанцию/скриншот."
+            f"После оплаты вернитесь и ОБЯЗАТЕЛЬНО отправьте квитанцию/скриншот.\n"
+            f"Если этого не сделать - администратор не увидит Вашей оплаты и срок проверки платежа может затянуться."
         )
         await call.message.edit_text(text, reply_markup=pay_link_kb(method["details"], tariff_id, chat_index, payment_id), parse_mode="HTML")
     else:
@@ -241,7 +242,8 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"💰 Сумма: <b>{final_price:.0f} {currency}</b>\n\n"
             f"<b>Реквизиты для перевода:</b>\n"
             f"{method['details']}\n\n"
-            f"После оплаты отправьте квитанцию/скриншот."
+            f"После оплаты ОБЯЗАТЕЛЬНО отправьте квитанцию/скриншот.\n"
+            f"Если этого не сделать - администратор не увидит Вашей оплаты и срок проверки платежа может затянуться."
         )
         await call.message.edit_text(text, reply_markup=pay_text_kb(payment_id), parse_mode="HTML")
 
