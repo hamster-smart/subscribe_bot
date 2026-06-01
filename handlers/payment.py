@@ -110,7 +110,7 @@ async def cb_send_screenshot(call: CallbackQuery, state: FSMContext):
     await state.update_data(current_payment_id=payment_id)
     await state.set_state(PaymentState.waiting_screenshot)
     await call.message.edit_text(
-        "📷 <b>ОБЯЗАТЕЛЬНО</b> пришлите квитанцию/скриншот оплаты (фото):",
+        "📷 Пришлите квитанцию/скриншот оплаты (фото):",
         reply_markup=back_kb("main_menu")
     )
 
