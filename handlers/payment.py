@@ -109,7 +109,7 @@ async def cb_send_screenshot(call: CallbackQuery, state: FSMContext):
     await state.update_data(current_payment_id=payment_id)
     await state.set_state(PaymentState.waiting_screenshot)
     await call.message.edit_text(
-        "📷 Пришлите квитанцию/скриншот оплаты (фото):",
+        "📷 ОБЯЗАТЕЛЬНО пришлите квитанцию/скриншот оплаты (фото):",
         reply_markup=back_kb("main_menu")
     )
 
@@ -366,7 +366,8 @@ async def _pay_yoomoney(call: CallbackQuery, tariff, amount: float,
             f"💳 <b>Оплата через ЮМани</b>\n\n"
             f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
             f"Переведите <b>точную сумму</b> по кнопке ниже.\n"
-            f"Доступ откроется автоматически после получения.",
+            f"Доступ откроется автоматически после получения.\n"
+            f"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку "подать заявку...".",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
@@ -432,7 +433,8 @@ async def _pay_nowpayments(call: CallbackQuery, tariff, amount: float,
             f"🪙 <b>Оплата криптовалютой</b>\n\n"
             f"📦 {tariff['name']} — {amount:.0f} ₽\n\n"
             f"Выберите криптовалюту и оплатите по кнопке ниже.\n"
-            f"Доступ откроется автоматически после подтверждения сети.",
+            f"Доступ откроется автоматически после подтверждения сети.\n"
+            f"Нужно будет открыть чат по ссылке, которую Вам пришлет бот, и повторно нажать в чате кнопку "подать заявку...".",
             reply_markup=builder.as_markup(),
             parse_mode="HTML"
         )
