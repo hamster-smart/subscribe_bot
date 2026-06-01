@@ -44,7 +44,7 @@ async def handle_join_request(request: ChatJoinRequest, bot: Bot):
 
     welcome = await db.get_setting(
         "welcome_text",
-        "👋 Привет! Для доступа к каналу оформи подписку."
+        "👋 Здравствуйте! Для доступа к каналу оформите подписку."
     )
     support_enabled = await db.get_setting("support_enabled", "1")
     chat_name = config.get_channel_name(chat_index)
@@ -54,7 +54,7 @@ async def handle_join_request(request: ChatJoinRequest, bot: Bot):
             user.id,
             f"{welcome}\n\n"
             f"📺 Канал: <b>{chat_name}</b>\n\n"
-            f"Выбери тариф — получишь ссылку сразу после оплаты.",
+            f"Выберите тариф — получите ссылку сразу после оплаты.",
             reply_markup=main_menu_kb(support_enabled == "1"),
             parse_mode="HTML"
         )
