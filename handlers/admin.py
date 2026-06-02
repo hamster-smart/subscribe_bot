@@ -755,7 +755,7 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
     user_id = data["grant_user_id"]
     chat_index = data.get("grant_chat_index", 0)
     await state.set_state(None)
-    tariff_id = 106
+    tariff_id = 106 if chat_index == 0 else 108
     await db.create_subscription(user_id, tariff_id, days, chat_index)
     from services.channel import grant_access
     link = await grant_access(bot, user_id, chat_index)
