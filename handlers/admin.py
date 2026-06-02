@@ -276,7 +276,7 @@ async def cb_admin_subs_export(call: CallbackQuery, bot: Bot):
             "FROM subscriptions s "
             "JOIN users u ON u.user_id=s.user_id "
             "JOIN tariffs t ON t.id=s.tariff_id "
-            "WHERE s.is_active=1 AND datetime(s.expires_at)>datetime('now') AND t.chat_index=? "
+            "WHERE s.is_active=1 AND datetime(s.expires_at)>datetime('now') AND s.chat_index=? "
             "ORDER BY s.expires_at ASC",
             (chat_index,)
         ) as cur:
