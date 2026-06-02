@@ -601,58 +601,56 @@ async def cb_admin_unban_user(call: CallbackQuery, bot: Bot):
     await call.answer("✅ Разбанен", show_alert=False)
     await show_user_info(call.message, user_id, bot, edit=True)
 
-@router.callback_query(F.data.startswith("admin_add30:"))
+@router.callback_query(F.data.startswith("admin_add30"))
 async def cb_admin_add30(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id):
         return
-    user_id = int(call.data.split(":")[1])
-
+    parts = call.data.split(":")
+    user_id = int(parts[1])
+    if len(parts) < 3:
+        # Показываем выбор чата (без кнопки "все")
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        from config import config as cfg
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text=cfg.get_channel_name(0), callback_data=f"admin_add30:{user_id}:0"))
+        builder.row(InlineKeyboardButton(text=cfg.get_channel_name(1), callback_data=f"admin_add30:{user_id}:1"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_userinfo:{user_id}"))
+        await call.message.edit_text("Для какого чата добавить 30 дней?", reply_markup=builder.as_markup())
+        return
+    chat_index = int(parts[2])
     import aiosqlite
     from datetime import datetime, timedelta
-
     async with aiosqlite.connect(config.DB_PATH) as dbc:
         dbc.row_factory = aiosqlite.Row
         async with dbc.execute(
-            "SELECT * FROM subscriptions WHERE user_id=? AND is_active=1 "
-            "ORDER BY expires_at DESC LIMIT 1",
-            (user_id,)
+            "SELECT * FROM subscriptions WHERE user_id=? AND is_active=1 AND chat_index=? ORDER BY expires_at DESC LIMIT 1",
+            (user_id, chat_index)
         ) as cur:
             sub = await cur.fetchone()
-
         if sub:
             new_exp = datetime.fromisoformat(sub["expires_at"]) + timedelta(days=30)
-            await dbc.execute(
-                "UPDATE subscriptions SET expires_at=? WHERE id=?",
-                (new_exp.isoformat(), sub["id"])
-            )
+            await dbc.execute("UPDATE subscriptions SET expires_at=? WHERE id=?", (new_exp.isoformat(), sub["id"]))
         else:
             async with dbc.execute(
-                "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY sort_order LIMIT 1"
+                "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 AND chat_index=? ORDER BY sort_order LIMIT 1",
+                (chat_index,)
             ) as cur2:
                 base = await cur2.fetchone()
-            tariff_id  = base["id"] if base else 2
-            chat_index = base["chat_index"] or 0 if base else 0
+            tariff_id = base["id"] if base else 2
             now = datetime.utcnow()
             new_exp = now + timedelta(days=30)
             await dbc.execute(
-                "INSERT INTO subscriptions (user_id, tariff_id, starts_at, expires_at, chat_index) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO subscriptions (user_id, tariff_id, starts_at, expires_at, chat_index) VALUES (?,?,?,?,?)",
                 (user_id, tariff_id, now.isoformat(), new_exp.isoformat(), chat_index)
             )
-
         await dbc.commit()
-
+    chat_name = config.get_channel_name(chat_index)
     try:
-        await bot.send_message(
-            user_id,
-            f"🎁 <b>+30 дней добавлено!</b>\n"
-            f"📅 Действует до: <b>{new_exp.strftime('%d.%m.%Y')}</b>",
-            parse_mode="HTML"
-        )
+        await bot.send_message(user_id, f"<b>+30 дней подписки!</b>\nЧат: {chat_name}\nДействует до: <b>{new_exp.strftime('%d.%m.%Y')}</b>", parse_mode="HTML")
     except Exception:
         pass
-
-    await call.answer("✅ +30 дней добавлено!", show_alert=False)
+    await call.answer(f"+30 дней ({chat_name})!", show_alert=False)
     await show_user_info(call.message, user_id, bot, edit=True)
 
 
@@ -723,10 +721,23 @@ class GrantCustomState(StatesGroup):
 async def cb_admin_grant_custom(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id):
         return
-    user_id = int(call.data.split(":")[1])
-    await state.update_data(grant_user_id=user_id)
+    parts = call.data.split(":")
+    user_id = int(parts[1])
+    if len(parts) < 3:
+        # Выбор чата
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        from config import config as cfg
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text=cfg.get_channel_name(0), callback_data=f"admin_grant_custom:{user_id}:0"))
+        builder.row(InlineKeyboardButton(text=cfg.get_channel_name(1), callback_data=f"admin_grant_custom:{user_id}:1"))
+        builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data=f"admin_userinfo:{user_id}"))
+        await call.message.edit_text("Для какого чата выдать подписку?", reply_markup=builder.as_markup())
+        return
+    chat_index = int(parts[2])
+    await state.update_data(grant_user_id=user_id, grant_chat_index=chat_index)
     await state.set_state(GrantCustomState.days)
-    await call.message.edit_text("Введи количество дней:", reply_markup=back_kb(f"admin_grant:{user_id}"))
+    await call.message.edit_text("Введите количество дней:", reply_markup=back_kb(f"admin_grant:{user_id}"))
 
 
 @router.message(GrantCustomState.days)
@@ -738,38 +749,32 @@ async def handle_grant_custom_days(message: Message, state: FSMContext, bot: Bot
         if days < 1:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введи число дней (минимум 1).")
+        await message.answer("Введите целое число от 1.")
         return
     data = await state.get_data()
     user_id = data["grant_user_id"]
+    chat_index = data.get("grant_chat_index", 0)
     await state.set_state(None)
-    import aiosqlite as aiosqlite
-    async with aiosqlite.connect(config.DB_PATH) as dbc:
-        dbc.row_factory = aiosqlite.Row
-        async with dbc.execute(
-            "SELECT * FROM tariffs WHERE is_active=1 AND is_trial=0 ORDER BY sort_order LIMIT 1"
-        ) as cur:
-            base_tariff = await cur.fetchone()
-    tariff_id = base_tariff["id"] if base_tariff else 2
-    chat_index = base_tariff["chat_index"] or 0 if base_tariff else 0
+    tariff_id = 106
     await db.create_subscription(user_id, tariff_id, days, chat_index)
     from services.channel import grant_access
     link = await grant_access(bot, user_id, chat_index)
     from datetime import datetime, timedelta
     expires = datetime.utcnow() + timedelta(days=days)
+    chat_name = config.get_channel_name(chat_index)
     try:
         await bot.send_message(
             user_id,
-            f"🎁 <b>Подписка выдана на {days} дней!</b>\n"
-            f"📅 До: <b>{expires.strftime('%d.%m.%Y')}</b>\n"
-            f"🔗 {link}",
+            f"<b>Подписка на {days} дней активирована!</b>\n"
+            f"Чат: {chat_name}\n"
+            f"Действует до: <b>{expires.strftime('%d.%m.%Y')}</b>\n"
+            f"{link}",
             parse_mode="HTML"
         )
     except Exception:
         pass
-    await message.answer(f"✅ Выдано {days} дней!")
+    await message.answer(f"✅ Выдано {days} дней ({chat_name})!")
     await show_user_info(message, user_id, bot, edit=False)
-
 
 # ─── BROADCAST ───────────────────────────────────────────────────────────────
 
