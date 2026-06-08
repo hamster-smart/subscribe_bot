@@ -2,7 +2,7 @@ aiogram==3.28.2
 aiosqlite==0.20.0
 apscheduler==3.10.4
 pydantic-settings==2.3.4
-aiohttp==3.13.0
+aiohttp>=3.9.0
 yookassa==3.4.3        # ЮКасса (pip install yookassa)
 uvicorn==0.30.1        # Для webhook_server (раскомментируй если нужен)
 openpyxl>=3.1.0
