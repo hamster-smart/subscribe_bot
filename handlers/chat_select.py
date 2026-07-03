@@ -57,17 +57,26 @@ def payment_methods_kb(tariff_id: int, chat_index: int, currency: str, methods: 
     return builder.as_markup()
 
 
-def pay_link_kb(url: str, tariff_id: int, chat_index: int, payment_id: int) -> object:
+def pay_link_kb(url: str) -> object:
+    """
+    Клавиатура для методов оплаты по ссылке.
+    Платёж ещё не создан на этом экране — данные лежат в FSM state,
+    запись в БД появится только по клику "Я оплатил, отправить скриншот".
+    """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="💳 Перейти к оплате", url=url))
-    builder.row(InlineKeyboardButton(text="📷 Отправить скриншот", callback_data=f"send_screenshot:{payment_id}"))
+    builder.row(InlineKeyboardButton(text="✅ Я оплатил, отправить скриншот", callback_data="send_screenshot:pending"))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
     return builder.as_markup()
 
 
-def pay_text_kb(payment_id: int) -> object:
+def pay_text_kb() -> object:
+    """
+    Клавиатура для методов оплаты по реквизитам (без внешней ссылки).
+    Платёж ещё не создан на этом экране — см. комментарий к pay_link_kb.
+    """
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📷 Отправить скриншот", callback_data=f"send_screenshot:{payment_id}"))
+    builder.row(InlineKeyboardButton(text="✅ Я оплатил, отправить скриншот", callback_data="send_screenshot:pending"))
     builder.row(InlineKeyboardButton(text="❌ Отменить", callback_data="main_menu"))
     return builder.as_markup()
 
@@ -212,18 +221,19 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
     if not method:
         await call.answer("Метод не найден", show_alert=True)
         return
-    payment_id = await db.create_payment(
-        user_id=call.from_user.id,
-        tariff_id=tariff_id,
-        amount=final_price,
-        method=f"manual_{method['name']}",
-        promo_code=promo_code,
-        chat_index=chat_index,
-        currency=currency
+
+    # Платёж пока НЕ создаём — только запоминаем выбор в state.
+    # Реальная запись в БД появится при клике "Я оплатил, отправить скриншот"
+    # (см. handlers/payment.py :: cb_send_screenshot).
+    await state.update_data(
+        pm_tariff_id=tariff_id,
+        pm_chat_index=chat_index,
+        pm_currency=currency,
+        pm_method_id=method_id,
+        pm_final_price=final_price,
+        pm_promo_code=promo_code,
     )
-    if promo_code:
-        await db.use_promo(promo_code)
-    await state.update_data(current_payment_id=payment_id, pending_chat_index=chat_index)
+
     chat_name = config.get_channel_name(chat_index)
     if method["is_link"]:
         text = (
@@ -234,7 +244,7 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"После оплаты вернитесь и <b>ОБЯЗАТЕЛЬНО</b> отправьте квитанцию/скриншот.\n\n"
             f"<i>Если этого не сделать - администратор не увидит Вашей оплаты и срок проверки платежа может затянуться.</i>"
         )
-        await call.message.edit_text(text, reply_markup=pay_link_kb(method["details"], tariff_id, chat_index, payment_id), parse_mode="HTML")
+        await call.message.edit_text(text, reply_markup=pay_link_kb(method["details"]), parse_mode="HTML")
     else:
         text = (
             f"💳 <b>{method['name']}</b>\n\n"
@@ -245,7 +255,7 @@ async def cb_choose_method(call: CallbackQuery, state: FSMContext):
             f"После оплаты <b>ОБЯЗАТЕЛЬНО</b> отправьте квитанцию/скриншот.\n\n"
             f"<i>Если этого не сделать - администратор не увидит Вашей оплаты и срок проверки платежа может затянуться.</i>"
         )
-        await call.message.edit_text(text, reply_markup=pay_text_kb(payment_id), parse_mode="HTML")
+        await call.message.edit_text(text, reply_markup=pay_text_kb(), parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("pay_online_yoomoney:"))
