@@ -59,7 +59,12 @@ async def _grant_free_access(call: CallbackQuery, state: FSMContext, tariff: dic
     await state.clear()
 
 
-# ─── MANUAL PAYMENT ────────────────────────────────────────────────────────────
+# ─── MANUAL PAYMENT (legacy flow) ──────────────────────────────────────────────
+# ПРИМЕЧАНИЕ: этот путь (pay_manual: / manual_payment_kb) больше не подключён
+# к текущему UI — реальный флоу ручной оплаты теперь идёт через
+# handlers/chat_select.py (choose_chat → select_tariff_chat → choose_method).
+# Оставлено для обратной совместимости, на случай если где-то ещё есть
+# кнопка/ссылка, ведущая на "pay_manual:{tariff_id}".
 
 @router.callback_query(F.data.startswith("pay_manual:"))
 async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
@@ -106,7 +111,43 @@ async def cb_pay_manual(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("send_screenshot:"))
 async def cb_send_screenshot(call: CallbackQuery, state: FSMContext):
-    payment_id = int(call.data.split(":")[1])
+    token = call.data.split(":", 1)[1]
+
+    if token == "pending":
+        # Новый флоу (handlers/chat_select.py): платёж ещё не создан —
+        # его данные лежат в FSM state, создаём запись именно сейчас,
+        # на реальном клике "Я оплатил, отправить скриншот".
+        data = await state.get_data()
+        tariff_id = data.get("pm_tariff_id")
+        chat_index = data.get("pm_chat_index", 0)
+        currency = data.get("pm_currency", "RUB")
+        method_id = data.get("pm_method_id")
+        final_price = data.get("pm_final_price")
+        promo_code = data.get("pm_promo_code")
+
+        if not tariff_id or final_price is None:
+            await call.answer("Сессия истекла, начните заново: /start", show_alert=True)
+            return
+
+        methods = await db.get_payment_methods(currency)
+        method = next((m for m in methods if m["id"] == method_id), None)
+        method_name = method["name"] if method else "manual"
+
+        payment_id = await db.create_payment(
+            user_id=call.from_user.id,
+            tariff_id=tariff_id,
+            amount=final_price,
+            method=f"manual_{method_name}",
+            promo_code=promo_code,
+            chat_index=chat_index,
+            currency=currency
+        )
+        if promo_code:
+            await db.use_promo(promo_code)
+    else:
+        # Legacy-флоу: платёж уже был создан раньше (cb_pay_manual), просто продолжаем.
+        payment_id = int(token)
+
     await state.update_data(current_payment_id=payment_id)
     await state.set_state(PaymentState.waiting_screenshot)
     await call.message.edit_text(
