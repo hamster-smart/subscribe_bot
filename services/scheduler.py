@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
+import aiosqlite
 
 import database as db
 from config import config
@@ -30,6 +31,17 @@ def setup_scheduler(scheduler: AsyncIOScheduler, bot: Bot):
         hours=1,
         args=[bot],
         id="send_reminders",
+        replace_existing=True
+    )
+
+    # Раз в сутки чистить брошенные онлайн-платежи (юкасса/тинькофф/юмани/крипта),
+    # по которым пользователь создал инвойс, но так и не оплатил.
+    # Ручные платежи (manual_*) не трогаем — там своя логика через скриншот/админа.
+    scheduler.add_job(
+        cleanup_stale_payments,
+        "interval",
+        hours=24,
+        id="cleanup_stale_payments",
         replace_existing=True
     )
 
@@ -85,6 +97,26 @@ async def send_reminders(bot: Bot):
                 logger.info(f"Sent {days}d reminder to user {sub['user_id']}")
             except Exception as e:
                 logger.warning(f"Could not send reminder to {sub['user_id']}: {e}")
+
+
+async def cleanup_stale_payments():
+    """
+    Перевести в 'expired' брошенные онлайн-платежи (yukassa/tinkoff/yoomoney/nowpayments),
+    которые провисели в 'pending' больше 24 часов без подтверждения по вебхуку.
+    Ручные (manual_*) платежи не трогаем — там своя логика через скриншот/админа.
+    """
+    async with aiosqlite.connect(config.DB_PATH) as dbc:
+        cursor = await dbc.execute(
+            "UPDATE payments SET status = 'expired' "
+            "WHERE status = 'pending' "
+            "AND method NOT LIKE 'manual%' "
+            "AND datetime(created_at) < datetime('now', '-24 hours')"
+        )
+        await dbc.commit()
+        count = cursor.rowcount
+
+    if count:
+        logger.info(f"Cleaned up {count} stale online payment(s) → expired")
 
 
 def _day_word(days: int) -> str:
