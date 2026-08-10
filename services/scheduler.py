@@ -3,6 +3,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram import Bot
 import aiosqlite
+import asyncio
 
 import database as db
 from config import config
@@ -78,6 +79,8 @@ async def check_expired(bot: Bot):
         # Деактивировать подписку в БД
         await db.deactivate_subscription(sub["id"])
         logger.info(f"Processed expired sub for user {user_id}: {action}")
+
+        await asyncio.sleep(0.5)  # защита от flood control Telegram
 
 
 async def send_reminders(bot: Bot):
