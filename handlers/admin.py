@@ -245,6 +245,26 @@ async def cb_admin_reject(call: CallbackQuery, bot: Bot):
     else:
         await call.message.edit_text(call.message.text + suffix, parse_mode="HTML")
 
+@router.callback_query(F.data.startswith("admin_silent_delete"))
+async def cb_admin_silent_delete(call: CallbackQuery, bot: Bot):
+    if not is_admin(call.from_user.id):
+        return
+    payment_id = int(call.data.split(":")[1])
+    payment = await db.get_payment(payment_id)
+    if not payment or payment["status"] != "pending":
+        await call.answer("Платёж уже обработан.", show_alert=True)
+        return
+
+    await db.reject_payment(payment_id, call.from_user.id)
+    # Юзеру ничего не отправляем — тихое удаление, без уведомления
+
+    await call.answer("Удалено без уведомления", show_alert=False)
+    suffix = "\n\n🗑 <b>Удалено (тихо)</b>"
+    if call.message.caption:
+        await call.message.edit_caption(call.message.caption + suffix, parse_mode="HTML")
+    else:
+        await call.message.edit_text(call.message.text + suffix, parse_mode="HTML")
+
 
 # ─── SUBSCRIBERS ─────────────────────────────────────────────────────────────
 
