@@ -82,6 +82,9 @@ def admin_payment_kb(payment_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"admin_confirm:{payment_id}"),
         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_reject:{payment_id}")
     )
+    builder.row(
+        InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_silent_delete:{payment_id}")
+    )
     return builder.as_markup()
 
 
