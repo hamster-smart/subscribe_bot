@@ -46,9 +46,13 @@ async def grant_access(bot: Bot, user_id: int, chat_index: int = 0) -> str:
 
 async def kick_user(bot: Bot, user_id: int, chat_index: int = 0):
     channel_id = get_channel_id(chat_index)
+    from datetime import datetime, timedelta
     try:
-        await bot.ban_chat_member(chat_id=channel_id, user_id=user_id)
-        await bot.unban_chat_member(chat_id=channel_id, user_id=user_id, only_if_banned=True)
+        await bot.ban_chat_member(
+            chat_id=channel_id,
+            user_id=user_id,
+            until_date=datetime.utcnow() + timedelta(seconds=35)
+        )
         logger.info(f"Kicked user {user_id} from channel {chat_index}")
     except Exception as e:
         logger.error(f"Failed to kick user {user_id} from channel {chat_index}: {e}")
